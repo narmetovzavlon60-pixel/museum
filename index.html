@@ -1,0 +1,2777 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>O‘rta Osiyo Qadimgi Kulolchiligi — 3D Ekspoziya</title>
+  
+  <!-- Telegram Web App SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- Three.js + OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- GLTF/DRACO/HDRI/WebXR — real .glb modellari va AR-rejim uchun -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/webxr/ARButton.js"></script>
+
+  <style>
+    :root {
+      --bg: #090b10;
+      --card-bg: rgba(15, 18, 26, 0.88);
+      --card-border: rgba(229, 184, 83, 0.28);
+      --accent: #e5b853;
+      --accent-bright: #ffd470;
+      --accent-glow: rgba(229, 184, 83, 0.45);
+      --text: #f5f3ec;
+      --text-muted: #9e9a8d;
+      --gold-gradient: linear-gradient(135deg, #f7d683 0%, #d49c3d 100%);
+      --surface-glass: rgba(18, 22, 33, 0.78);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--text);
+    }
+
+    /* PRELOADER */
+    #preloader {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.65s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.65s;
+    }
+
+    #preloader.fade-out {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .preloader-core {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .spinner-ring {
+      width: 58px;
+      height: 58px;
+      border: 3px solid rgba(229, 184, 83, 0.15);
+      border-top: 3px solid var(--accent-bright);
+      border-right: 3px solid var(--accent);
+      border-radius: 50%;
+      animation: spin 1s infinite cubic-bezier(0.65, 0.05, 0.36, 1);
+      box-shadow: 0 0 25px var(--accent-glow);
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .preloader-tag {
+      font-size: 10px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      background: var(--gold-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 800;
+    }
+
+    .preloader-title {
+      font-size: 13.5px;
+      color: #ede9dc;
+      letter-spacing: 0.8px;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    .preloader-bar-wrap {
+      width: 180px;
+      height: 3px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .preloader-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: var(--gold-gradient);
+      transition: width 0.2s ease;
+      box-shadow: 0 0 10px var(--accent-bright);
+    }
+
+    /* WEBGL XATOLIK */
+    #webgl-fallback {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #090b10;
+      z-index: 1100;
+      padding: 30px;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .fallback-box {
+      max-width: 360px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 24px 20px;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.8);
+    }
+
+    .fallback-box h2 {
+      font-size: 16px;
+      color: var(--accent-bright);
+      margin-bottom: 10px;
+    }
+
+    .fallback-box p {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-muted);
+    }
+
+    /* 3D CANVAS */
+    #canvas-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      touch-action: none;
+    }
+
+    #webgl-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* YUQORI PANEL (HEADER) */
+    .header-bar {
+      position: absolute;
+      top: max(12px, env(safe-area-inset-top));
+      left: 12px;
+      right: 12px;
+      z-index: 30;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      gap: 8px;
+    }
+
+    .brand {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 7px 12px;
+      border-radius: 14px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      pointer-events: auto;
+      max-width: 48%;
+    }
+
+    .brand .tag {
+      font-size: 7.5px;
+      text-transform: uppercase;
+      letter-spacing: 1.8px;
+      background: var(--gold-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .brand h1 {
+      font-size: 12.5px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .quick-actions {
+      display: flex;
+      gap: 6px;
+      pointer-events: auto;
+      align-items: center;
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 11px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+    }
+
+    .icon-btn:active, .icon-btn.active {
+      border-color: var(--accent);
+      background: rgba(229, 184, 83, 0.25);
+      color: var(--accent-bright);
+      box-shadow: 0 0 16px var(--accent-glow);
+      transform: scale(0.95);
+    }
+
+    /* TILNI ALMASHTIRISH TUGMASI (UZ | RU) */
+    .lang-switcher {
+      display: flex;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 11px;
+      padding: 2px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+    }
+
+    .lang-opt {
+      padding: 6px 9px;
+      font-size: 10px;
+      font-weight: 800;
+      border-radius: 8px;
+      color: var(--text-muted);
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: all 0.2s ease;
+    }
+
+    .lang-opt.active {
+      background: var(--gold-gradient);
+      color: #12141a;
+      box-shadow: 0 2px 8px rgba(229, 184, 83, 0.4);
+    }
+
+    .hint-tap {
+      position: absolute;
+      top: 68px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 9px;
+      color: rgba(255,255,255,0.48);
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      pointer-events: none;
+      z-index: 10;
+      text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+      white-space: nowrap;
+      background: rgba(0,0,0,0.3);
+      padding: 4px 10px;
+      border-radius: 12px;
+      backdrop-filter: blur(6px);
+    }
+
+    /* HOTSPOTLAR (DIQQATGA SAZOVOR NUQTALAR) */
+    .hotspot-node {
+      position: absolute;
+      z-index: 15;
+      transform: translate(-50%, -50%);
+      pointer-events: auto;
+      cursor: pointer;
+      transition: opacity 0.3s;
+    }
+
+    .hotspot-ring {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(229, 184, 83, 0.35);
+      border: 1.5px solid var(--accent-bright);
+      box-shadow: 0 0 12px var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: pulse 2.2s infinite ease-in-out;
+    }
+
+    .hotspot-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #fff;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.22); opacity: 0.55; box-shadow: 0 0 20px var(--accent); }
+    }
+
+    .hotspot-tooltip {
+      position: absolute;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(6px);
+      background: rgba(14, 17, 26, 0.95);
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-size: 11px;
+      color: var(--text);
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.25s ease;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.85);
+      max-width: 220px;
+      text-align: center;
+      line-height: 1.35;
+    }
+
+    .hotspot-node:hover .hotspot-tooltip,
+    .hotspot-node.active .hotspot-tooltip {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* QALQUVCHI IXCHAM MA'LUMOT PANEL (YANGI EKSPOZISIYA KARTASI) */
+    .floating-badge {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: max(112px, calc(env(safe-area-inset-bottom) + 112px));
+      z-index: 22;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface-glass);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 8px 14px;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.65);
+      pointer-events: auto;
+      max-width: 540px;
+      margin: 0 auto;
+    }
+
+    .badge-meta {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding-right: 8px;
+    }
+
+    .badge-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent-bright);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge-sub {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge-btn {
+      flex: 0 0 auto;
+      background: rgba(229, 184, 83, 0.16);
+      border: 1px solid var(--accent);
+      color: var(--accent-bright);
+      border-radius: 10px;
+      padding: 6px 11px;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .badge-btn:active {
+      background: var(--accent);
+      color: #090b10;
+      transform: scale(0.96);
+    }
+
+    /* MODAL OYNA — EKSPONAT TO'LIQ PASPORTI (DIALOG) */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(4, 6, 10, 0.72);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 200;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal-card {
+      width: 100%;
+      max-width: 520px;
+      max-height: 82vh;
+      background: rgba(15, 18, 27, 0.96);
+      border: 1px solid var(--card-border);
+      border-bottom: none;
+      border-radius: 24px 24px 0 0;
+      box-shadow: 0 -12px 38px rgba(0,0,0,0.85);
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+
+    .modal-overlay.active .modal-card {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      padding: 14px 18px 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .modal-pill {
+      width: 38px;
+      height: 4px;
+      background: rgba(255,255,255,0.25);
+      border-radius: 2px;
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .modal-header-text h3 {
+      font-size: 15px;
+      color: var(--accent-bright);
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .modal-header-text span {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .modal-close-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+      flex-shrink: 0;
+      margin-left: 12px;
+    }
+
+    .modal-close-btn:active {
+      background: rgba(229,184,83,0.3);
+      color: var(--accent);
+    }
+
+    .modal-body {
+      padding: 16px 18px 24px 18px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.6;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .meta-table {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: grid;
+      grid-template-columns: 95px 1fr;
+      gap: 8px;
+      font-size: 11.5px;
+    }
+
+    .meta-label {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .meta-val {
+      color: #ede9dc;
+    }
+
+    .features-list {
+      list-style: none;
+      padding-left: 0;
+      margin-top: 6px;
+    }
+
+    .features-list li {
+      position: relative;
+      padding-left: 16px;
+      color: #ded8cc;
+      margin-bottom: 6px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .features-list li::before {
+      content: "◆";
+      position: absolute;
+      left: 2px;
+      font-size: 7px;
+      top: 4px;
+      color: var(--accent);
+    }
+
+    /* FILTRLAR PANELI */
+    .filter-bar {
+      position: absolute;
+      bottom: max(64px, calc(env(safe-area-inset-bottom) + 64px));
+      left: 0;
+      right: 0;
+      z-index: 20;
+      display: flex;
+      gap: 5px;
+      overflow-x: auto;
+      padding: 0 12px;
+      scrollbar-width: none;
+      justify-content: flex-start;
+    }
+    .filter-bar::-webkit-scrollbar { display: none; }
+
+    .filter-chip {
+      flex: 0 0 auto;
+      font-size: 9.5px;
+      letter-spacing: 0.3px;
+      color: var(--text-muted);
+      background: rgba(15, 18, 26, 0.78);
+      border: 1px solid rgba(229, 184, 83, 0.16);
+      border-radius: 16px;
+      padding: 4px 10px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-chip.active {
+      color: var(--accent-bright);
+      border-color: var(--accent-bright);
+      background: rgba(229, 184, 83, 0.22);
+      box-shadow: 0 0 10px rgba(229, 184, 83, 0.3);
+    }
+
+    /* PASTKI EKSPOZITSIYA KARUSELI */
+    .carousel-bar {
+      position: absolute;
+      bottom: max(10px, env(safe-area-inset-bottom));
+      left: 0;
+      right: 0;
+      z-index: 20;
+      display: flex;
+      gap: 7px;
+      overflow-x: auto;
+      padding: 6px 12px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+
+    .carousel-bar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .culture-tab {
+      flex: 0 0 auto;
+      scroll-snap-align: center;
+      background: rgba(15, 18, 26, 0.88);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 6px 13px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      cursor: pointer;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      transition: all 0.2s;
+    }
+
+    .culture-tab.active {
+      background: rgba(229, 184, 83, 0.28);
+      border-color: var(--accent-bright);
+      box-shadow: 0 0 14px var(--accent-glow);
+      transform: translateY(-2px);
+    }
+
+    .tab-idx {
+      font-size: 7.5px;
+      color: var(--accent);
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .tab-name {
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .culture-tab.filtered-out {
+      display: none;
+    }
+
+    /* AR REJIMI ELEMENTLARI */
+    #ar-native-btn { display: none !important; }
+
+    #ar-reticle-hint {
+      position: fixed;
+      bottom: max(20px, env(safe-area-inset-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      color: #fff;
+      background: rgba(0,0,0,0.65);
+      padding: 8px 16px;
+      border-radius: 20px;
+      z-index: 2000;
+      display: none;
+      text-align: center;
+    }
+
+    body.ar-mode .brand,
+    body.ar-mode .hint-tap,
+    body.ar-mode .filter-bar,
+    body.ar-mode .carousel-bar,
+    body.ar-mode .floating-badge,
+    body.ar-mode #hotspots-container,
+    body.ar-mode #btn-rotate,
+    body.ar-mode #btn-wireframe,
+    body.ar-mode #btn-hotspots,
+    body.ar-mode #btn-reset,
+    body.ar-mode .lang-switcher {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- PRELOADER -->
+  <div id="preloader">
+    <div class="preloader-core">
+      <div class="spinner-ring"></div>
+      <div class="preloader-tag" id="preloader-tag">Qadimgi kulolchilik ekspozitsiyasi</div>
+      <div class="preloader-title" id="preloader-title">3D eksponatlar yuklanmoqda...</div>
+      <div class="preloader-bar-wrap">
+        <div class="preloader-bar-fill" id="preload-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WEBGL QO'LLAB-QUVVATLANMASA -->
+  <div id="webgl-fallback">
+    <div class="fallback-box">
+      <h2 id="fallback-title">3D rejimi ishlamaydi</h2>
+      <p id="fallback-desc">Qurilmangiz yoki brauzeringiz WebGL texnologiyasini qo‘llab-quvvatlamaydi. Iltimos, sahifani zamonaviy brauzerda oching yoki Telegram sozlamalarida WebGL-ni faollashtiring.</p>
+    </div>
+  </div>
+
+  <!-- YUQORI BOSHQARUV PANELI -->
+  <div class="header-bar">
+    <div class="brand">
+      <div class="tag" id="header-tag">Akademik 3D Ko‘rgazma</div>
+      <h1 id="header-title">O‘rta Osiyo kulolchiligi</h1>
+    </div>
+
+    <div class="quick-actions">
+      <!-- Til tanlash: UZ | RU -->
+      <div class="lang-switcher">
+        <div class="lang-opt active" id="lang-uz" onclick="switchLanguage('uz')">UZ</div>
+        <div class="lang-opt" id="lang-ru" onclick="switchLanguage('ru')">RU</div>
+      </div>
+
+      <button class="icon-btn active" id="btn-rotate" title="Avto-aylanish">⟳</button>
+      <button class="icon-btn" id="btn-wireframe" title="Rentgen / Profil">◫</button>
+      <button class="icon-btn active" id="btn-hotspots" title="Diqqatga sazovor nuqtalar">✦</button>
+      <button class="icon-btn" id="btn-reset" title="Kamerani dastlabki holatga qaytarish">⊙</button>
+      <button class="icon-btn" id="btn-ar" title="AR ko‘rish" style="display:none;">◱</button>
+    </div>
+  </div>
+
+  <div class="hint-tap" id="hint-tap">Aylantirish — 1 barmoq • Masshtab — 2 barmoq • 2 marta bosish — dastlabki holat</div>
+  
+  <div id="canvas-container">
+    <canvas id="webgl-canvas"></canvas>
+  </div>
+
+  <div id="hotspots-container"></div>
+
+  <!-- QALQUVCHI IXCHAM MA'LUMOT BADGE (PASTKI KO'RINISHNI TO'SMA YDI) -->
+  <div class="floating-badge" id="floating-badge">
+    <div class="badge-meta">
+      <div class="badge-title" id="badge-title">Eksponat nomi</div>
+      <div class="badge-sub" id="badge-sub">Madaniyat • Davr</div>
+    </div>
+    <button class="badge-btn" id="badge-btn-info">
+      <span>ℹ</span>
+      <span id="badge-btn-text">Ma'lumot</span>
+    </button>
+  </div>
+
+  <!-- MODAL OYNA: EKSPONAT PASPORTI -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-pill"></div>
+      <div class="modal-header">
+        <div class="modal-header-text">
+          <h3 id="modal-title">Eksponat pasporti</h3>
+          <span id="modal-culture">Madaniyat / Davr</span>
+        </div>
+        <button class="modal-close-btn" id="modal-close-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="meta-table">
+          <span class="meta-label" id="lbl-period">Davr:</span>
+          <span class="meta-val" id="meta-period">-</span>
+          <span class="meta-label" id="lbl-region">Hudud:</span>
+          <span class="meta-val" id="meta-region">-</span>
+          <span class="meta-label" id="lbl-tech">Texnologiya:</span>
+          <span class="meta-val" id="meta-tech">-</span>
+        </div>
+        <p id="meta-desc" style="color:#ded8cc; font-size:12.5px;">-</p>
+        <div>
+          <span id="lbl-features" style="font-weight:700; color:var(--accent); font-size:11.5px; text-transform:uppercase; letter-spacing:0.8px;">Uslubning asosiy belgilari:</span>
+          <ul class="features-list" id="meta-features"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="ar-reticle-hint">Yuzani aniqlang va eksponatni joylashtirish uchun bosing</div>
+
+  <!-- DAVRLAR BO'YICHA FILTR CHIPLARI -->
+  <div class="filter-bar" id="filter-bar"></div>
+
+  <!-- EKSPOZITSIYA KARUSELI -->
+  <div class="carousel-bar" id="carousel"></div>
+
+  <script>
+    /* =========================================================================
+       1. WEBGL TEKSHIRUVI VA TELEGRAM WEB APP SDK
+       ========================================================================= */
+    function checkWebGLSupport() {
+      try {
+        const testCanvas = document.createElement('canvas');
+        return !!(window.WebGLRenderingContext && (testCanvas.getContext('webgl') || testCanvas.getContext('experimental-webgl')));
+      } catch (e) {
+        return false;
+      }
+    }
+
+    if (!checkWebGLSupport()) {
+      document.getElementById('webgl-fallback').style.display = 'flex';
+      const preloader = document.getElementById('preloader');
+      if (preloader) preloader.style.display = 'none';
+      throw new Error("WebGL not supported.");
+    }
+
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      try {
+        tg.setHeaderColor('#090b10');
+        tg.setBackgroundColor('#090b10');
+      } catch(e) {}
+    }
+
+    function triggerHaptic(type = 'light') {
+      try {
+        if (tg?.HapticFeedback) {
+          if (type === 'selection') tg.HapticFeedback.selectionChanged();
+          else tg.HapticFeedback.impactOccurred(type);
+        }
+      } catch(e) {}
+    }
+
+    /* =========================================================================
+       2. TRANSLATIONS VA TILLARNI BOSHQARISH TIZIMI (UZ / RU)
+       ========================================================================= */
+    let currentLang = 'uz'; // Birlamchi til — O'zbek tili
+
+    const UI_STRINGS = {
+      uz: {
+        preloaderTag: "Qadimgi kulolchilik ekspozitsiyasi",
+        preloaderTitle: "3D eksponatlar yuklanmoqda...",
+        headerTag: "Akademik 3D Ko‘rgazma",
+        headerTitle: "O‘rta Osiyo kulolchiligi",
+        hintTap: "Aylantirish — 1 barmoq • Masshtab — 2 barmoq • 2 marta bosish — dastlabki holat",
+        badgeInfo: "Ma'lumot",
+        lblPeriod: "Davr:",
+        lblRegion: "Hudud:",
+        lblTech: "Texnologiya:",
+        lblFeatures: "Uslubning asosiy belgilari:",
+        arHint: "Yuzani aniqlang va eksponatni joylashtirish uchun bosing",
+        fallbackTitle: "3D rejimi ishlamaydi",
+        fallbackDesc: "Qurilmangiz yoki brauzeringiz WebGL texnologiyasini qo‘llab-quvvatlamaydi. Iltimos, sahifani zamonaviy brauzerda oching.",
+        btnRotate: "Avto-aylanish",
+        btnWireframe: "Rentgen / Profil",
+        btnHotspots: "Diqqatga sazovor nuqtalar",
+        btnReset: "Kamerani dastlabki holatga qaytarish",
+        btnAr: "AR ko‘rish",
+        catAll: "Barchasi",
+        catNeolithic: "Neolit",
+        catEneolithic: "Eneolit",
+        catBronze: "Bronza davri",
+        catIron: "Temir davri",
+        catAntiquity: "Antik davr",
+        catMedieval: "O‘rta asrlar"
+      },
+      ru: {
+        preloaderTag: "Экспозиция древней керамики",
+        preloaderTitle: "Загрузка 3D экспонатов...",
+        headerTag: "Академическая 3D Экспозиция",
+        headerTitle: "Керамика Средней Азии",
+        hintTap: "Вращение — 1 палец • Масштаб — 2 пальца • Двойной тап — сброс",
+        badgeInfo: "Паспорт",
+        lblPeriod: "Эпоха:",
+        lblRegion: "Регион:",
+        lblTech: "Технология:",
+        lblFeatures: "Ключевые маркеры стиля:",
+        arHint: "Наведите на поверхность и коснитесь, чтобы разместить экспонат",
+        fallbackTitle: "3D режим недоступен",
+        fallbackDesc: "Ваше устройство или браузер не поддерживает WebGL. Пожалуйста, откройте страницу в современном браузере.",
+        btnRotate: "Авто-вращение",
+        btnWireframe: "Рентген / Профиль",
+        btnHotspots: "Точки интереса",
+        btnReset: "Сброс вида",
+        btnAr: "Просмотр в AR",
+        catAll: "Все эпохи",
+        catNeolithic: "Неолит",
+        catEneolithic: "Энеолит",
+        catBronze: "Бронзовый век",
+        catIron: "Железный век",
+        catAntiquity: "Античность",
+        catMedieval: "Средневековье"
+      }
+    };
+
+    /* =========================================================================
+       3. 10 TA EKSPONATNING TO'LIQ IKKI TILLI AKADEMIK KATALOGI
+       ========================================================================= */
+    const RAW_ARTIFACTS_DATA = [
+      {
+        id: "jeitun",
+        category: "neolithic",
+        camDist: 3.8,
+        camY: 1.8,
+        uz: {
+          title: "Daraxtsimon oxra naqshli kosa",
+          culture: "Joytun madaniyati",
+          period: "Ilk neolit (mil. avv. VI mingyillik)",
+          region: "Janubiy Turkmaniston (Kopetdog‘ etaklari)",
+          tech: "Qo‘lda tasmali-bog‘lamli yasash, somon qipig‘i qo‘shilgan, gulxanda oksidlovchi pishirish",
+          desc: "O‘rta Osiyodagi o‘troq dehqonlarning eng qadimiy naqshinkor sopol namunasi. Loyga maydalangan organik somon aralashtirilib, qo‘lda yasalgan. Och tusli angob qoplamasi ustiga tabiiy mineral oxra suspenziyasi yordamida daraxtsimon va geometrik quyosh timsollari tushirilgan.",
+          features: [
+            "Pishirish paytida organik somon qipig‘i kuyib ketishi natijasida hosil bo‘lgan g‘ovak struktura",
+            "Och tusli angob ustiga to‘q qizil mineral oxra bilan chizilgan naqshlar",
+            "Yarim sharsimon ochiq kosa profili"
+          ],
+          hotspots: [
+            { pos: [0, 1.45, 1.6], title: "Oxrali naqsh", desc: "Mineral oxra: daraxtsimon va to‘lqinli geometrik timsollar" },
+            { pos: [0, 0.15, 0.4], title: "Somonli g‘ovak loy", desc: "Maydalangan somon qipig‘idan qolgan xos qatlam" }
+          ]
+        },
+        ru: {
+          title: "Чаша с древовидной охристой росписью",
+          culture: "Джейтунская культура",
+          period: "Ранний неолит (VI тыс. до н.э.)",
+          region: "Южная Туркмения (предгорья Копетдага)",
+          tech: "Ручной ленточно-жгутовой налеп, примесь половы, окислительный костровой обжиг",
+          desc: "Древнейшая расписная керамика оседлых земледельцев Средней Азии. Отформована вручную из илистой глины с добавлением органического отощителя (рубленой соломы). По светло-кремовому фону минеральной суспензией охры нанесены геометрические и солярно-растительные мотивы.",
+          features: [
+            "Пористый черепок с отпечатками выгоревшей растительной сечки (половы)",
+            "Роспись красной минеральной охрой поверх светлого ангобного слоя",
+            "Плавный профиль открытой полусферической чаши"
+          ],
+          hotspots: [
+            { pos: [0, 1.45, 1.6], title: "Охристая роспись", desc: "Минеральная охра: древовидные солярные символы и волны" },
+            { pos: [0, 0.15, 0.4], title: "Половинный черепок", desc: "Характерная пористость от выгоревшей рубленой соломы" }
+          ]
+        }
+      },
+      {
+        id: "kelteminar",
+        category: "neolithic",
+        camDist: 4.4,
+        camY: 2.1,
+        uz: {
+          title: "Taroqsimon archasimon naqshli o‘tkir tubli xumcha",
+          culture: "Kaltaminor madaniyati",
+          period: "Orolbo‘yi neoliti (mil. avv. V–IV mingyillik)",
+          region: "Aqchadaryo deltasi, Orol dengizi havzasi",
+          tech: "Spiral-tasmali terish, shamot va chig‘anoq aralashmasi, ochiq o‘choqda pishirish",
+          desc: "Orolbo‘yining qadimgi ovchi va baliqchilariga mansub sopol idish. Konus shaklidagi o‘tkir tubi uni o‘choq qumiga va kulla orasiga mustahkam o‘rnatish imkonini bergan. Butun sirtiga suyak taroqli shtamp yordamida baliq qovurg‘asini eslatuvchi archasimon naqshlar bosilgan.",
+          features: [
+            "O‘choq qumiga botirib qo‘yish uchun mo‘ljallangan o‘tkir konussimon tub",
+            "Taroqsimon tishli shtamp bilan o‘yilgan yaxlit vertikal archasimon bezaklar",
+            "Lab ostidagi ritmik chuqurchali nuqtalar frizi"
+          ],
+          hotspots: [
+            { pos: [0, 2.7, 1.3], title: "Chuqurchali belgi", desc: "Lab qismidagi ritmik chuqurchali o‘ymalar" },
+            { pos: [0, 0.1, 0.15], title: "O‘tkir konus tub", desc: "O‘choq qumida qozonni qimirlamasdan ushlab turuvchi asos" }
+          ]
+        },
+        ru: {
+          title: "Остродонный сосуд с гребенчатой ёлочкой",
+          culture: "Кельтеминарская культура",
+          period: "Неолит Приаралья (V–IV тыс. до н.э.)",
+          region: "Дельта Акчадарьи, бассейн Аральского моря",
+          tech: "Спирально-ленточный налеп, шамот и раковина, открытый очажный обжиг",
+          desc: "Керамика неолитических охотников и рыболовов Приаралья. Коническое острие позволяло устойчиво фиксировать сосуд в песке очага между зольниками. Вся внешняя поверхность богато орнаментирована оттисками зубчатого костяного штампа в виде шевронов («рыбья кость»).",
+          features: [
+            "Острое коническое дно для установки в очажный песок",
+            "Сплошной резной орнамент из вертикальных зон гребенчатой ёлочки",
+            "Пояс глубоких ямочных вдавлений под прямым венчиком"
+          ],
+          hotspots: [
+            { pos: [0, 2.7, 1.3], title: "Ямочные вдавления", desc: "Ритмический ямочный фриз под венчиком" },
+            { pos: [0, 0.1, 0.15], title: "Коническое дно", desc: "Установка в песок очага для варки рыбы и мяса" }
+          ]
+        }
+      },
+      {
+        id: "anau",
+        category: "eneolithic",
+        camDist: 4.5,
+        camY: 2.2,
+        uz: {
+          title: "Zinasimon metopa va shox naqshli ko‘za",
+          culture: "Anov madaniyati / Namozgoh III",
+          period: "So‘nggi eneolit (mil. avv. 3200–2800 yy.)",
+          region: "Janubiy Turkmaniston tog‘oldi mintaqasi",
+          tech: "Sekin aylanuvchi kulol charxi, ikki kamerali xumdon",
+          desc: "Eneolit davri naqshli kulolchiligining yuksak namunasi. Nozik fil suyagi rangidagi angob ustiga marganesli to‘q jigarrang bo‘yoq bilan ko‘p pog‘onali piramidasimon metopalar va yovvoyi tog‘ echkisining uslublashtirilgan shoxlari tasvirlangan.",
+          features: [
+            "Och qaymoqrang fonda marganes pigmentli kontrastli qoramtir-jigarrang tasvir",
+            "Zinasimon ko‘p qavatli uchburchaklar va shaxmatsimon metopalar",
+            "Burilish stoli hamda murakkab ikki kamerali xumdonda pishirish"
+          ],
+          hotspots: [
+            { pos: [0, 1.8, 1.35], title: "Zinasimon friz", desc: "Eneolit davri dunyoqarashini ifodalovchi piramidasimon bezak" },
+            { pos: [0, 2.9, 0.85], title: "Bo‘g‘iz gardishi", desc: "Qopqoqni qulay joylashtirish uchun ishlangan hoshiya" }
+          ]
+        },
+        ru: {
+          title: "Кувшин со ступенчатыми метопами и рогами",
+          culture: "Культура Анау / Намазга III",
+          period: "Поздний энеолит (ок. 3200–2800 гг. до н.э.)",
+          region: "Южный Туркменистан (предгорная полоса)",
+          tech: "Медленный поворотный гончарный круг, двухкамерный горн",
+          desc: "Шедевр энеолитической расписной традиции. На тонкий светло-кремовый ангоб нанесены темно-коричневые марганцевые геометрические фризы: ступенчатые пирамидальные метопы и стилизованные рога дикого козерога, маркирующие развитую солярную мифологию.",
+          features: [
+            "Контрастный темно-коричневый марганцевый пигмент по цвету слоновой кости",
+            "Ступенчатые многоярусные треугольники и шахматные метопы",
+            "Формовка на поворотном столике с обжигом в двухкамерном гончарном горне"
+          ],
+          hotspots: [
+            { pos: [0, 1.8, 1.35], title: "Ступенчатый фриз", desc: "Многоярусные пирамиды энеолитического пантеона" },
+            { pos: [0, 2.9, 0.85], title: "Шейка с каймой", desc: "Контрастная линия венчика для фиксации крышки" }
+          ]
+        }
+      },
+      {
+        id: "sarazm",
+        category: "eneolithic",
+        camDist: 4.3,
+        camY: 2.1,
+        uz: {
+          title: "Shaxmat naqshli lolagulsimon qadah",
+          culture: "Sarazm madaniyati",
+          period: "Eneolit / Ilk bronza (mil. avv. IV–III mingyillik)",
+          region: "Zarafshon vodiysi (G‘arbiy Tojikiston / Panjakent)",
+          tech: "Dastgohda shakllantirish, yuqori haroratli pishirish, ikki rangli bo‘yash",
+          desc: "Zarafshon vodiysining qadimgi metallurgiya va shaharsozlik markaziga mansub nozik buyum. Qadah nafis lola shaklida ishlangan bo‘lib, qizil va to‘q jigarrang bo‘yoqlar uyg‘unligidagi quyosh shakllari bilan bezatilgan.",
+          features: [
+            "Nafis lolasimon shakldagi mutanosib me'moriy tuzilish",
+            "Ikki rangli naqsh: terrakota-qizil va to‘q qahvarang uyg‘unligi",
+            "Yaxshilab tindirilgan mayin gilli jarangdor sopol pishiqligi"
+          ],
+          hotspots: [
+            { pos: [0, 2.2, 1.25], title: "Shaxmat kamari", desc: "Bir-biriga tutashgan geometrik kvadratlar to‘ri" },
+            { pos: [0, 1.4, 0.9], title: "Quyosh rozetkasi", desc: "Radial nurlarga ega quyosh ramzi" }
+          ]
+        },
+        ru: {
+          title: "Тюльпановидный кубок с шахматным фризом",
+          culture: "Саразмская культура",
+          period: "Энеолит / Ранняя бронза (IV–III тыс. до н.э.)",
+          region: "Долина Зеравшана (Западный Таджикистан)",
+          tech: "Станковый формовочный круг, высокотемпературный обжиг, полихромия",
+          desc: "Выдающийся образец протоурбанистического ремесла древнейшего металлургического центра долины Зеравшана. Тонкостенный тюльпановидный кубок демонстрирует великолепный баланс двухцветной росписи и солярных крестообразных розеток.",
+          features: [
+            "Элегантная чашевидная тюльпановидная архитектоника",
+            "Двухцветная роспись: терракотово-красный и темно-коричневый пигменты",
+            "Плотный звонкий черепок из тщательно отмученной глины"
+          ],
+          hotspots: [
+            { pos: [0, 2.2, 1.25], title: "Шахматный пояс", desc: "Сетка взаимопроникающих геометрических элементов" },
+            { pos: [0, 1.4, 0.9], title: "Солярная розетка", desc: "Символ солнца с радиальными лучами" }
+          ]
+        }
+      },
+      {
+        id: "sapallitepa",
+        category: "bronze",
+        camDist: 4.6,
+        camY: 2.3,
+        uz: {
+          title: "Baland taglikli qirrali qadah",
+          culture: "Sopollitepa madaniyati (BMAC)",
+          period: "Rivojlangan bronza davri (mil. avv. 1700–1500 yy.)",
+          region: "Shimoliy Baqtriya (Surxondaryo vohasi, O‘zbekiston)",
+          tech: "Tez aylanuvchi kulol charxi, oksidlovchi xumdon, yaltiroq silliqlash",
+          desc: "Oks sivilizatsiyasining (Baqtriya-Marg‘iyona arxeologik majmuasi) klassik yodgorligi. Metall idishlarga taqlid qilingan aniq tektonikasi, pastki qismidagi qirrasi va ipakdek tovlanuvchi silliqlangan sirti bilan ajralib turadi.",
+          features: [
+            "Gavdaning pastki qismidagi o‘tkir metallsimon qirra (karinatsiya)",
+            "Baland ichi bo‘sh profillangan silindrsimon taglik-oyoqcha",
+            "Bo‘yoqsiz, aylana yo‘nalishda jilolangan zich och pushti angob"
+          ],
+          hotspots: [
+            { pos: [0, 1.65, 1.25], title: "Metallsimon qirra", desc: "Zarblangan bronza idishlarga taqlid qilib ishlangan burchak" },
+            { pos: [0, 0.4, 0.45], title: "Ichi bo‘sh taglik", desc: "Charxda mahorat bilan chiqarilgan baland oyoqcha" }
+          ]
+        },
+        ru: {
+          title: "Реберчатый кубок на высоком поддоне",
+          culture: "Сапаллинская культура (БМАК)",
+          period: "Развитая бронза (ок. 1700–1500 гг. до н.э.)",
+          region: "Северная Бактрия (Сурхандарьинский оазис, Узбекистан)",
+          tech: "Скоростной гончарный круг, окислительный горн, лощение до блеска",
+          desc: "Классический памятник Оксианской цивилизации (Бактрийско-Маргианского археологического комплекса). Характеризуется строгой металловидной тектоникой: резкая каринация (ребро), тонкие профилированные стенки и шелковистый блеск светло-розового лощения.",
+          features: [
+            "Острая каринация (ребро) в нижней трети тулова",
+            "Высокий полый профилированный поддон-ножка",
+            "Плотный ангоб с круговым полосчатым лощением без росписи"
+          ],
+          hotspots: [
+            { pos: [0, 1.65, 1.25], title: "Каринация", desc: "Резкое ребро корпуса, имитирующее чеканную бронзовую посуду" },
+            { pos: [0, 0.4, 0.45], title: "Полый поддон", desc: "Станковая вытяжка высокой цилиндрической ножки" }
+          ]
+        }
+      },
+      {
+        id: "andronovo",
+        category: "bronze",
+        camDist: 4.4,
+        camY: 2.1,
+        uz: {
+          title: "Zinasimon yelkali va meandr naqshli tuvak",
+          culture: "Andronovo madaniyati (Fedorovo bosqichi)",
+          period: "Bronza davri (mil. avv. XVI–XIV asrlar)",
+          region: "Markaziy Osiyo va Qozog‘iston dasht mintaqasi",
+          tech: "Qolipda qo‘lda yasash, taroqli shtamp, oq pasta bilan to‘ldirish",
+          desc: "Dasht chorvadorlari va jang aravalari egalarining marosim idishi. Yelkasi aniq zinasimon bukilgan bo‘lib, taroqsimon shtamp yordamida tushirilgan meandr naqshlari ichiga oq rangli mineral pasta to‘ldirilgan.",
+          features: [
+            "Bo‘g‘izdan yelkaga o‘tishda aniq geometrik zinasimon karniz",
+            "Murakkab qadam tashlovchi meandr va rombsimon naqshlar",
+            "Tishli taroqli puanson bilan chuqur zarblab tushirilgan bezak"
+          ],
+          hotspots: [
+            { pos: [0, 1.85, 1.45], title: "Zinasimon yelka", desc: "Idishning mustahkam geometrik sinish chizig‘i" },
+            { pos: [0, 1.4, 1.3], title: "Taroqli meandr", desc: "Oq mineral pasta izlari saqlangan nafis naqsh" }
+          ]
+        },
+        ru: {
+          title: "Горшок с уступом и степным меандром",
+          culture: "Андроновская культура (Федоровский этап)",
+          period: "Бронзовый век (XVI–XIV вв. до н.э.)",
+          region: "Степная зона Центральной Азии и Казахстана",
+          tech: "Ручной налеп по форме-болванке, гребенчатый штамп, пастовая инкрустация",
+          desc: "Эталонная ритуальная посуда степных скотоводов и колесничих. Сосуд с четким уступом на плече украшен чеканным зубчатым штампом: зоны шагающего ступенчатого меандра и треугольников заполнялись контрастной белой минеральной пастой.",
+          features: [
+            "Выраженный ступенчатый уступ-карниз на переходе от горловины к плечику",
+            "Сложный шагающий меандр и ромбические свастические мотивы",
+            "Плотная чеканка многозубчатым гребенчатым пуансоном"
+          ],
+          hotspots: [
+            { pos: [0, 1.85, 1.45], title: "Уступ плечика", desc: "Четкий геометрический перелом профиля" },
+            { pos: [0, 1.4, 1.3], title: "Гребенчатый меандр", desc: "Чеканка зубчатым штампом со следами белой пасты" }
+          ]
+        }
+      },
+      {
+        id: "chust",
+        category: "iron",
+        camDist: 4.5,
+        camY: 2.2,
+        uz: {
+          title: "Qizil angobli va qora naqshli xum",
+          culture: "Chust madaniyati",
+          period: "So‘nggi bronza / Ilk temir davri (mil. avv. XI–VIII asrlar)",
+          region: "Farg‘ona vodiysi (O‘zbekiston / Qirg‘iziston)",
+          tech: "Qo‘lda tasmali quyish, to‘yingan temirli qizil angob, qora rangli naqsh",
+          desc: "Farg‘ona vodiysining qadimgi dehqonlariga oid noyob yodgorlik. Idish yaltiroq qizil angob bilan qoplangan bo‘lib, uning ustiga qora marganesli bo‘yoq bilan chizilgan osma uchburchaklar va to‘rsimon chiziqlar tushirilgan.",
+          features: [
+            "To‘yingan qizil tusli jilolangan zich temirli angob",
+            "Qora geometrik naqshlar (gorizontal osilgan chiziqli uchburchaklar)",
+            "Labdan yelkaga tushuvchi mustahkam tasmali tutqichlar"
+          ],
+          hotspots: [
+            { pos: [0, 1.9, 1.25], title: "Chust naqshi", desc: "Qizil fon ustiga tushirilgan qora geometrik uchburchaklar" },
+            { pos: [1.4, 2.0, 0], title: "Tasmali tutqich", desc: "Qo‘lda biriktirilgan baquvvat oval shaklidagi dasta" }
+          ]
+        },
+        ru: {
+          title: "Красноангобированная расписная корчага",
+          culture: "Чустская культура",
+          period: "Эпоха поздней бронзы / РЖВ (XI–VIII вв. до н.э.)",
+          region: "Ферганская долина (Узбекистан / Кыргызстан)",
+          tech: "Ручная лепка жгутами, насыщенный железистый ангоб, роспись черным пигментом",
+          desc: "Аутентичный памятник древних оседлых земледельцев Ферганы. Сосуд покрыт ярко-красным блестящим железистым ангобом, по которому черным железо-марганцевым красителем нанесены динамичные зоны заштрихованных висячих треугольников и сетчатых шевронов.",
+          features: [
+            "Яркий терракотово-красный лощеный ангоб высокой плотности",
+            "Черная геометрическая роспись (висячие заштрихованные треугольники)",
+            "Массивные вертикальные ленточные ручки от венчика к плечу"
+          ],
+          hotspots: [
+            { pos: [0, 1.9, 1.25], title: "Чустская роспись", desc: "Черные висячие треугольники по красному лощеному ангобу" },
+            { pos: [1.4, 2.0, 0], title: "Ленточная ручка", desc: "Массивная овальная ручка ручного налепа" }
+          ]
+        }
+      },
+      {
+        id: "kaunchi",
+        category: "antiquity",
+        camDist: 4.6,
+        camY: 2.2,
+        uz: {
+          title: "Qo‘chqor boshli tutqichli (kizelli) ko‘za",
+          culture: "Qovunchi madaniyati",
+          period: "Qang‘ davri (mil. avv. III a. – mil. IV a.)",
+          region: "Toshkent vohasi, Chirchiq daryosi havzasi",
+          tech: "Kulol charxi, yorqin qizil angob, haykaltaroshlik zoomorf plastika",
+          desc: "Qang‘ davlatining dabdabali dasturxon ko‘zasi. Tutqichi ustiga burama shoxli arxar (tog‘ qo‘chqori) boshi shaklidagi kizel o‘rnatilgan. Qo‘chqor ilohiy qudrat va fayz-baraka (Farn / Xvarno) timsoli sanalgan.",
+          features: [
+            "Tutqich ustidagi haykaltaroshlik usulida ishlangan burama shoxli arxar boshi",
+            "Suyak asbob bilan vertikal yo‘nalishda jilolangan qizil yaltiroq angob",
+            "Siqiq sharsimon tanacha va bo‘g‘zidagi nafis bo‘rtma gardish"
+          ],
+          hotspots: [
+            { pos: [1.35, 2.7, 0], title: "Kizel (arxar shoxi)", desc: "Ilohiy Farn timsoli va idishdagi ichimlikni asrovchi tumor" },
+            { pos: [0, 1.2, 1.25], title: "Chiziqli jilolash", desc: "Yaltiroq silliqlash natijasida hosil bo‘lgan oyna kabi chiziqlar" }
+          ]
+        },
+        ru: {
+          title: "Кувшин с бараноморфным налепом (кизелем)",
+          culture: "Каунчинская культура",
+          period: "Кангюйский период (III в. до н.э. – IV в. н.э.)",
+          region: "Приташкентский оазис, долина р. Чирчик",
+          tech: "Гончарный круг, ярко-красный ангоб, зооморфная пластическая скульптура",
+          desc: "Парадный столовый кувшин государства Кангюй. Ручка сосуда увенчана скульптурным кизелем в виде головы и закрученных рогов винторогого барана — архара. Баран олицетворял божественную благодать (Фарн / Хварно) и служил оберегом напитка.",
+          features: [
+            "Скульптурный зооморфный налеп-кизель с рогами барана на венчике ручки",
+            "Сочный красный полированный ангоб с вертикальным полосчатым лощением",
+            "Сжатое упругое шаровидное тулово с профилированным валиком у шейки"
+          ],
+          hotspots: [
+            { pos: [1.35, 2.7, 0], title: "Кизель (рога архара)", desc: "Зооморфный оберег: олицетворение божественного Фарна" },
+            { pos: [0, 1.2, 1.25], title: "Полосчатое лощение", desc: "Вертикальные зеркальные полосы заглаживания костяным лощилом" }
+          ]
+        }
+      },
+      {
+        id: "kushan",
+        category: "antiquity",
+        camDist: 4.7,
+        camY: 2.3,
+        uz: {
+          title: "Uchbargli labli ingichka devorli oenoxoya",
+          culture: "Kushon Baqtriyasi",
+          period: "Kushon podsholigi (mil. I–III asrlar)",
+          region: "Shimoliy Baqtriya (Eski Termiz, Xolchayon)",
+          tech: "Yupqa mayin lyoss tuproq, tezyurar charx, yaltiroq korall lak-angob",
+          desc: "Buyuk Kushon imperiyasi san'atidagi ellinistik an'ana. Idish devorining qalinligi 1.8 mm dan kam («tuxum po‘chog‘i»). May quyish uchun qulay uchbargli lab (jo‘mrak) hamda tovlanuvchi marjon-qizil pishiq angob bilan qoplangan.",
+          features: [
+            "Jarangdor sopol massasining o‘ta nozik devorli mahorati",
+            "Ipaksimon jiloli suv o‘tkazmaydigan marjonrang laksimon qoplama",
+            "Qulay quyish uchun shakllantirilgan uchbargli qadimgi yunon uslubidagi lab"
+          ],
+          hotspots: [
+            { pos: [-0.95, 3.12, 0], title: "Uchbargli lab", desc: "Ellinistik oenoxoya uslubidagi sharob quyish jo‘mragi" },
+            { pos: [0, 1.7, 1.18], title: "Kushon yaltiroq laki", desc: "Yuqori haroratda erigan ipaksimon jiloli maxsus angob" }
+          ]
+        },
+        ru: {
+          title: "Тонкостенная ойнохоя с трилистным венчиком",
+          culture: "Кушанская Бактрия",
+          period: "Кушанское царство (I–III вв. н.э.)",
+          region: "Северная Бактрия (Старый Термез, Халчаян)",
+          tech: "Тонкоотмученная лессовая глина, скоростной круг, лаковый спекшийся ангоб",
+          desc: "Эллинистическая традиция в искусстве Великой Кушанской империи. Толщина черепка составляет менее 1.8 мм («яичная скорлупа»). Сосуд снабжен характерным трилистным венчиком-сливом и покрыт безупречным кораллово-красным спекшимся лаковым ангобом.",
+          features: [
+            "Исключительная тонкостенность звонкого керамического теста",
+            "Спекшийся водонепроницаемый коралловый ангоб шелковистого блеска",
+            "Трилистный фигурный венчик с удобным профилированным носиком"
+          ],
+          hotspots: [
+            { pos: [-0.95, 3.12, 0], title: "Трилистный венчик", desc: "Эллинистический фигурный слив ойнохои для вина" },
+            { pos: [0, 1.7, 1.18], title: "Кушанский лак", desc: "Высокотемпературный спекшийся ангоб с шелковистым отблеском" }
+          ]
+        }
+      },
+      {
+        id: "afrasiab",
+        category: "medieval",
+        camDist: 4.7,
+        camY: 2.2,
+        uz: {
+          title: "Medalonli so‘g‘d muhrlangan ko‘zasi",
+          culture: "Ilk o‘rta asr So‘g‘di",
+          period: "Milodiy VI–VIII asrlar (Buyuk Ipak yo‘li davri)",
+          region: "Samarqand (Afrosiyob shaharchasi)",
+          tech: "Dastgohda yasash, o‘yma matritsada muhrlash, yumshoq pishirish",
+          desc: "Samarqand so‘g‘d zodagonlarining kulolchilik durdonasi. Idish yelkasiga marvarid halqali durlar bilan o‘ralgan dumaloq bo‘rtma medalyonlar va muqaddas palmetta tasvirlari bosilgan bo‘lib, So‘g‘d kumush idishlari shaklini takrorlaydi.",
+          features: [
+            "Durlar halqasi va muqaddas o‘simlik bilan bezatilgan bo‘rtma muhrli medalyonlar",
+            "Sosoniy va so‘g‘d kumush torevtika idishlariga taqlid shakli",
+            "Baland konus bo‘g‘iz asosidagi bo‘rtma tasmali gardish"
+          ],
+          hotspots: [
+            { pos: [0, 2.0, 1.25], title: "Marvaridli durlar", desc: "Kumush idishlar an'anasidagi durlar bilan o‘ralgan medalyon" },
+            { pos: [0, 2.55, 0.65], title: "Bo‘rtma gardish", desc: "Bo‘g‘izni mustahkamlovchi nafis halqasimon tizma" }
+          ]
+        },
+        ru: {
+          title: "Согдийский штампованный кувшин с медальонами",
+          culture: "Раннесредневековый Согд",
+          period: "VI–VIII вв. н.э. (эпоха Шелкового пути)",
+          region: "Самарканд (городище Афрасиаб)",
+          tech: "Станковая формовка, оттиск резных штампов-матриц, мягкий обжиг",
+          desc: "Шедевр керамического искусства согдийской знати Самарканда. На плечиках сосуда оттиснуты круглые рельефные медальоны с перловым (жемчужным) обрамлением и священными пальметтами, прямо воспроизводящие мотивы парадной сасанидской и согдийской торевтики (серебряных кувшинов).",
+          features: [
+            "Рельефные штампованные медальоны с перловым ободком и растительной пальметтой",
+            "Подражание чеканным формам иранского и согдийского серебра",
+            "Рельефный жгутовой валик у основания высокой конической шейки"
+          ],
+          hotspots: [
+            { pos: [0, 2.0, 1.25], title: "Штампованный перл", desc: "Медальон с жемчужинами в традициях серебряной торевтики" },
+            { pos: [0, 2.55, 0.65], title: "Рельефный валик", desc: "Укрепляющий профилированный поясок на шейке" }
+          ]
+        }
+      }
+    ];
+
+    // Faol tilga moslashtirilgan eksponatlar ro'yxati
+    let ARTIFACTS = [];
+
+    function resolveArtifacts(lang) {
+      return RAW_ARTIFACTS_DATA.map(item => {
+        const tr = item[lang] || item.uz;
+        return {
+          id: item.id,
+          category: item.category,
+          camDist: item.camDist,
+          camY: item.camY,
+          title: tr.title,
+          culture: tr.culture,
+          period: tr.period,
+          region: tr.region,
+          tech: tr.tech,
+          desc: tr.desc,
+          features: tr.features,
+          hotspots: tr.hotspots,
+          model: item.model || null,
+          pbr: item.pbr || null
+        };
+      });
+    }
+
+    /* =========================================================================
+       4. TEXTURALAR VA NORMAL/BUMP GENERATORI
+       ========================================================================= */
+    const W = 512, H = 512;
+
+    function generateArtifactMaps(id) {
+      const colorCanvas = document.createElement('canvas');
+      colorCanvas.width = colorCanvas.height = W;
+      const ctx = colorCanvas.getContext('2d', { willReadFrequently: false });
+
+      const bumpCanvas = document.createElement('canvas');
+      bumpCanvas.width = bumpCanvas.height = W;
+      const bCtx = bumpCanvas.getContext('2d', { willReadFrequently: false });
+
+      bCtx.fillStyle = '#808080';
+      bCtx.fillRect(0, 0, W, H);
+
+      if (id === 'jeitun') {
+        ctx.fillStyle = '#eedbc0';
+        ctx.fillRect(0, 0, W, H);
+
+        for (let i = 0; i < 950; i++) {
+          const rx = Math.random() * W, ry = Math.random() * H;
+          const len = Math.random() * 8 + 2;
+          ctx.fillStyle = Math.random() > 0.5 ? 'rgba(100,60,30,0.22)' : 'rgba(255,255,255,0.35)';
+          ctx.fillRect(rx, ry, len, 1.4);
+          bCtx.fillStyle = 'rgba(40,40,40,0.35)';
+          bCtx.fillRect(rx, ry, len, 1.2);
+        }
+
+        ctx.strokeStyle = '#992a18';
+        ctx.fillStyle = '#992a18';
+        ctx.lineWidth = 14;
+        ctx.lineCap = 'round';
+        ctx.fillRect(0, 25, W, 14);
+
+        for (let x = 32; x < W; x += 64) {
+          ctx.beginPath();
+          ctx.moveTo(x, 40);
+          ctx.bezierCurveTo(x + 35, 160, x - 35, 310, x + 10, 480);
+          ctx.stroke();
+
+          for (let y = 100; y < 440; y += 75) {
+            ctx.beginPath();
+            ctx.arc(x + 18, y, 15, -Math.PI * 0.5, Math.PI * 0.5);
+            ctx.stroke();
+          }
+        }
+      } else if (id === 'kelteminar') {
+        ctx.fillStyle = '#ab7348';
+        ctx.fillRect(0, 0, W, H);
+
+        for (let i = 0; i < 16; i++) {
+          const rg = ctx.createRadialGradient(Math.random()*W, Math.random()*H, 15, Math.random()*W, Math.random()*H, 140);
+          rg.addColorStop(0, 'rgba(30,16,8,0.7)');
+          rg.addColorStop(1, 'transparent');
+          ctx.fillStyle = rg;
+          ctx.fillRect(0, 0, W, H);
+        }
+
+        ctx.fillStyle = '#1e1008';
+        bCtx.fillStyle = '#202020';
+        for (let x = 12; x < W; x += 22) {
+          ctx.beginPath();
+          ctx.arc(x, 48, 6.5, 0, Math.PI*2);
+          ctx.fill();
+          bCtx.beginPath();
+          bCtx.arc(x, 48, 7, 0, Math.PI*2);
+          bCtx.fill();
+        }
+
+        for (let y = 80; y < H - 20; y += 36) {
+          const dir = ((y - 80) / 36) % 2 === 0 ? 1 : -1;
+          for (let x = 0; x < W; x += 15) {
+            ctx.strokeStyle = '#2d160a';
+            ctx.lineWidth = 3.5;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + dir * 13, y + 32);
+            ctx.stroke();
+
+            bCtx.strokeStyle = '#282828';
+            bCtx.lineWidth = 4;
+            bCtx.beginPath();
+            bCtx.moveTo(x, y);
+            bCtx.lineTo(x + dir * 13, y + 32);
+            bCtx.stroke();
+          }
+        }
+      } else if (id === 'anau') {
+        ctx.fillStyle = '#faecd6';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#281308';
+        ctx.fillRect(0, 15, W, 18);
+        ctx.fillRect(0, 48, W, 8);
+
+        const yTop = 90, yBot = 270;
+        ctx.fillRect(0, yTop, W, 8);
+        ctx.fillRect(0, yBot, W, 8);
+
+        const metW = 85;
+        for (let x = 0; x < W; x += metW) {
+          ctx.fillRect(x, yTop, 6, yBot - yTop);
+          for (let step = 0; step < 5; step++) {
+            const sw = (5 - step) * 14;
+            const sh = 32;
+            const sy = yBot - (step + 1) * sh;
+            ctx.fillRect(x + (metW - sw) / 2, sy, sw, sh - 4);
+          }
+        }
+
+        ctx.fillRect(0, 310, W, 6);
+        ctx.fillRect(0, 410, W, 6);
+        for (let x = 0; x < W; x += 42) {
+          ctx.beginPath();
+          ctx.moveTo(x, 360);
+          ctx.lineTo(x + 21, 320);
+          ctx.lineTo(x + 42, 360);
+          ctx.lineTo(x + 21, 400);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        for (let y = 0; y < H; y += 4) {
+          bCtx.strokeStyle = 'rgba(90,90,90,0.15)';
+          bCtx.strokeRect(0, y, W, 1);
+        }
+      } else if (id === 'sarazm') {
+        ctx.fillStyle = '#e2c5a4';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#2d1408';
+        ctx.fillRect(0, 25, W, 12);
+        ctx.fillRect(0, 275, W, 12);
+
+        for (let y = 50; y < 150; y += 20) {
+          for (let x = 0; x < W; x += 20) {
+            if (((x + y) / 20) % 2 === 0) {
+              ctx.fillStyle = '#2d1408';
+              ctx.fillRect(x, y, 20, 20);
+            }
+          }
+        }
+
+        for (let x = 34; x < W; x += 85) {
+          ctx.fillStyle = '#9b381e';
+          ctx.beginPath();
+          ctx.arc(x + 10, 212, 28, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#2d1408';
+          ctx.beginPath();
+          ctx.arc(x + 10, 212, 14, 0, Math.PI * 2);
+          ctx.fill();
+
+          for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+            ctx.strokeStyle = '#9b381e';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(x + 10, 212);
+            ctx.lineTo(x + 10 + Math.cos(a) * 36, 212 + Math.sin(a) * 36);
+            ctx.stroke();
+          }
+        }
+      } else if (id === 'sapallitepa') {
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#f2d4b2');
+        grad.addColorStop(0.5, '#e4ba8d');
+        grad.addColorStop(1, '#d8ac80');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+
+        for (let y = 0; y < H; y += 4) {
+          ctx.fillStyle = y % 8 === 0 ? 'rgba(255,255,255,0.22)' : 'rgba(70,35,15,0.05)';
+          ctx.fillRect(0, y, W, 2);
+          bCtx.fillStyle = y % 8 === 0 ? '#999' : '#757575';
+          bCtx.fillRect(0, y, W, 2);
+        }
+
+        ctx.strokeStyle = '#7c431d';
+        ctx.strokeRect(0, 60, W, 2);
+        ctx.strokeRect(0, 210, W, 3);
+        bCtx.fillStyle = '#333';
+        bCtx.fillRect(0, 210, W, 4);
+      } else if (id === 'andronovo') {
+        ctx.fillStyle = '#ba6238';
+        ctx.fillRect(0, 0, W, H);
+
+        const y1 = 90, y2 = 280;
+        ctx.fillStyle = '#261107';
+        ctx.fillRect(0, y1, W, 7);
+        ctx.fillRect(0, y2, W, 7);
+
+        const meandW = 64;
+        for (let x = 0; x < W; x += meandW) {
+          ctx.strokeStyle = '#fef6ea';
+          ctx.lineWidth = 4;
+          ctx.strokeRect(x + 8, y1 + 18, 48, 70);
+          ctx.strokeRect(x + 18, y1 + 32, 28, 42);
+
+          bCtx.strokeStyle = '#303030';
+          bCtx.lineWidth = 5;
+          bCtx.strokeRect(x + 8, y1 + 18, 48, 70);
+          bCtx.strokeRect(x + 18, y1 + 32, 28, 42);
+
+          ctx.fillStyle = '#261107';
+          ctx.beginPath();
+          ctx.moveTo(x, y2 - 6);
+          ctx.lineTo(x + meandW/2, y2 - 70);
+          ctx.lineTo(x + meandW, y2 - 6);
+          ctx.closePath();
+          ctx.fill();
+
+          for (let l = 1; l <= 5; l++) {
+            ctx.strokeStyle = '#fef6ea';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(x + l * 5, y2 - 6 - l * 10);
+            ctx.lineTo(x + meandW - l * 5, y2 - 6 - l * 10);
+            ctx.stroke();
+
+            bCtx.strokeStyle = '#444';
+            bCtx.lineWidth = 3;
+            bCtx.beginPath();
+            bCtx.moveTo(x + l * 5, y2 - 6 - l * 10);
+            bCtx.lineTo(x + meandW - l * 5, y2 - 6 - l * 10);
+            bCtx.stroke();
+          }
+        }
+      } else if (id === 'chust') {
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#b83b22');
+        grad.addColorStop(0.5, '#ca4429');
+        grad.addColorStop(1, '#a63019');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+
+        for (let x = 0; x < W; x += 12) {
+          ctx.fillStyle = 'rgba(255,190,170,0.12)';
+          ctx.fillRect(x, 0, 6, H);
+          bCtx.fillStyle = '#8a8a8a';
+          bCtx.fillRect(x, 0, 6, H);
+        }
+
+        const triW = 64, triH = 120, yStart = 100;
+        ctx.fillStyle = '#1c1514';
+        ctx.strokeStyle = '#1c1514';
+        ctx.fillRect(0, yStart - 10, W, 8);
+        ctx.fillRect(0, yStart + triH + 8, W, 8);
+
+        for (let x = 0; x < W; x += triW) {
+          ctx.beginPath();
+          ctx.moveTo(x, yStart);
+          ctx.lineTo(x + triW, yStart);
+          ctx.lineTo(x + triW / 2, yStart + triH);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.strokeStyle = '#ca4429';
+          ctx.lineWidth = 3;
+          for (let l = 1; l <= 5; l++) {
+            const ly = yStart + l * 18;
+            const inset = l * 5;
+            ctx.beginPath();
+            ctx.moveTo(x + inset, ly);
+            ctx.lineTo(x + triW - inset, ly);
+            ctx.stroke();
+          }
+        }
+
+        for (let x = 0; x < W; x += 24) {
+          ctx.strokeStyle = '#1c1514';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(x, 320);
+          ctx.lineTo(x + 24, 380);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(x + 24, 320);
+          ctx.lineTo(x, 380);
+          ctx.stroke();
+        }
+      } else if (id === 'kaunchi') {
+        ctx.fillStyle = '#9e331e';
+        ctx.fillRect(0, 0, W, H);
+
+        for (let x = 0; x < W; x += 10) {
+          ctx.fillStyle = 'rgba(255,180,160,0.15)';
+          ctx.fillRect(x, 0, 5, H);
+          bCtx.fillStyle = '#909090';
+          bCtx.fillRect(x, 0, 5, H);
+        }
+
+        ctx.fillStyle = '#421107';
+        ctx.fillRect(0, 85, W, 8);
+        bCtx.fillStyle = '#333';
+        bCtx.fillRect(0, 85, W, 8);
+
+        for (let x = 0; x < W; x += 14) {
+          ctx.fillRect(x, 80, 5, 18);
+          bCtx.fillRect(x, 80, 5, 18);
+        }
+      } else if (id === 'kushan') {
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#c73a20');
+        grad.addColorStop(0.3, '#dd4c32');
+        grad.addColorStop(0.7, '#ba2f17');
+        grad.addColorStop(1, '#c73a20');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+
+        for (let y = 60; y < H - 60; y += 7) {
+          ctx.fillStyle = 'rgba(255,255,255,0.15)';
+          ctx.fillRect(0, y, W, 2);
+          ctx.fillStyle = 'rgba(60,10,5,0.14)';
+          ctx.fillRect(0, y + 3, W, 2);
+          bCtx.fillStyle = '#a0a0a0';
+          bCtx.fillRect(0, y, W, 2);
+          bCtx.fillStyle = '#606060';
+          bCtx.fillRect(0, y + 3, W, 2);
+        }
+      } else if (id === 'afrasiab') {
+        ctx.fillStyle = '#cfa76e';
+        ctx.fillRect(0, 0, W, H);
+
+        const medY = 175, medR = 38;
+        for (let x = 45; x < W; x += 105) {
+          ctx.fillStyle = '#9e7943';
+          ctx.beginPath();
+          ctx.arc(x, medY, medR + 2, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#e6c898';
+          ctx.beginPath();
+          ctx.arc(x - 2, medY - 2, medR, 0, Math.PI * 2);
+          ctx.fill();
+
+          bCtx.fillStyle = '#bbb';
+          bCtx.beginPath();
+          bCtx.arc(x, medY, medR, 0, Math.PI * 2);
+          bCtx.fill();
+
+          ctx.fillStyle = '#4a3314';
+          for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+            const px = x + Math.cos(a) * (medR - 6);
+            const py = medY + Math.sin(a) * (medR - 6);
+            ctx.beginPath();
+            ctx.arc(px, py, 3.8, 0, Math.PI * 2);
+            ctx.fill();
+            bCtx.fillStyle = '#fff';
+            bCtx.beginPath();
+            bCtx.arc(px, py, 4, 0, Math.PI * 2);
+            bCtx.fill();
+          }
+
+          ctx.fillStyle = '#69481e';
+          ctx.beginPath();
+          ctx.moveTo(x, medY - 20);
+          ctx.quadraticCurveTo(x + 18, medY, x, medY + 20);
+          ctx.quadraticCurveTo(x - 18, medY, x, medY - 20);
+          ctx.fill();
+
+          bCtx.fillStyle = '#ddd';
+          bCtx.beginPath();
+          bCtx.moveTo(x, medY - 20);
+          bCtx.quadraticCurveTo(x + 18, medY, x, medY + 20);
+          bCtx.quadraticCurveTo(x - 18, medY, x, medY - 20);
+          bCtx.fill();
+        }
+      }
+
+      const mapTex = new THREE.CanvasTexture(colorCanvas);
+      mapTex.wrapS = THREE.RepeatWrapping;
+      mapTex.wrapT = THREE.ClampToEdgeWrapping;
+      mapTex.needsUpdate = true;
+
+      const bumpTex = new THREE.CanvasTexture(bumpCanvas);
+      bumpTex.wrapS = THREE.RepeatWrapping;
+      bumpTex.wrapT = THREE.ClampToEdgeWrapping;
+      bumpTex.needsUpdate = true;
+
+      return { map: mapTex, bump: bumpTex };
+    }
+
+    /* =========================================================================
+       5. 3D GEOMETRIYALAR VA MODELLARNI YARATISH
+       ========================================================================= */
+    const SEGS = 64;
+
+    function applyHandmadeOrganicNoise(geom, amp = 0.024, freq = 3.5) {
+      const pos = geom.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        if (y < 0.04) continue;
+
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+        const r = Math.sqrt(x * x + z * z);
+        if (r < 0.01) continue;
+
+        const theta = Math.atan2(z, x);
+        const wave1 = Math.sin(theta * 2.0 + y * freq) * amp;
+        const wave2 = Math.cos(theta * 3.0 - y * 2.2) * (amp * 0.45);
+        const wave3 = Math.sin(theta * 5.0 + y * 7.0) * (amp * 0.22);
+        const totalDisp = 1.0 + (wave1 + wave2 + wave3) / r;
+
+        pos.setX(i, x * totalDisp);
+        pos.setZ(i, z * totalDisp);
+      }
+      geom.computeVertexNormals();
+    }
+
+    function createVesselMesh(artData, textures) {
+      const id = artData.id;
+      const isLustrous = (id === 'sapallitepa' || id === 'kushan');
+      const isSemiPolished = (id === 'chust' || id === 'kaunchi');
+      const isMattePorous = (id === 'jeitun' || id === 'kelteminar');
+
+      const mat = new THREE.MeshPhysicalMaterial({
+        map: textures.map,
+        bumpMap: textures.bump,
+        bumpScale: id === 'kelteminar' ? 0.045 : (id === 'afrasiab' ? 0.04 : 0.02),
+        roughness: isMattePorous ? 0.88 : (isLustrous ? 0.28 : (isSemiPolished ? 0.42 : 0.65)),
+        metalness: id === 'sapallitepa' ? 0.06 : 0.01,
+        clearcoat: isLustrous ? 0.35 : (isSemiPolished ? 0.15 : 0.0),
+        clearcoatRoughness: 0.2,
+        side: THREE.DoubleSide
+      });
+
+      let pts = [];
+
+      if (id === 'jeitun') {
+        pts = [
+          new THREE.Vector2(0.00, 0.00),
+          new THREE.Vector2(0.55, 0.04),
+          new THREE.Vector2(1.15, 0.35),
+          new THREE.Vector2(1.65, 0.95),
+          new THREE.Vector2(1.85, 1.55),
+          new THREE.Vector2(1.80, 1.65),
+          new THREE.Vector2(1.68, 1.65),
+          new THREE.Vector2(1.50, 1.05),
+          new THREE.Vector2(1.00, 0.45),
+          new THREE.Vector2(0.40, 0.15),
+          new THREE.Vector2(0.00, 0.12)
+        ];
+        const geo = new THREE.LatheGeometry(pts, SEGS);
+        applyHandmadeOrganicNoise(geo, 0.028, 3.2);
+        return new THREE.Mesh(geo, mat);
+      } else if (id === 'kelteminar') {
+        pts = [
+          new THREE.Vector2(0.02, 0.00),
+          new THREE.Vector2(0.25, 0.35),
+          new THREE.Vector2(0.70, 0.95),
+          new THREE.Vector2(1.25, 1.75),
+          new THREE.Vector2(1.42, 2.30),
+          new THREE.Vector2(1.35, 2.80),
+          new THREE.Vector2(1.40, 2.95),
+          new THREE.Vector2(1.30, 2.95),
+          new THREE.Vector2(1.24, 2.75),
+          new THREE.Vector2(1.30, 2.25),
+          new THREE.Vector2(1.10, 1.70),
+          new THREE.Vector2(0.15, 0.35),
+          new THREE.Vector2(0.00, 0.10)
+        ];
+        const geo = new THREE.LatheGeometry(pts, SEGS);
+        applyHandmadeOrganicNoise(geo, 0.035, 2.8);
+        return new THREE.Mesh(geo, mat);
+      } else if (id === 'anau') {
+        pts = [
+          new THREE.Vector2(0.00, 0.00),
+          new THREE.Vector2(0.55, 0.00),
+          new THREE.Vector2(0.58, 0.12),
+          new THREE.Vector2(1.05, 0.65),
+          new THREE.Vector2(1.48, 1.40),
+          new THREE.Vector2(1.42, 2.05),
+          new THREE.Vector2(0.95, 2.55),
+          new THREE.Vector2(0.82, 2.90),
+          new THREE.Vector2(0.95, 3.05),
+          new THREE.Vector2(0.85, 3.05),
+          new THREE.Vector2(0.74, 2.85),
+          new THREE.Vector2(0.86, 2.50),
+          new THREE.Vector2(1.30, 2.00),
+          new THREE.Vector2(1.35, 1.40),
+          new THREE.Vector2(0.48, 0.15),
+          new THREE.Vector2(0.00, 0.15)
+        ];
+        return new THREE.Mesh(new THREE.LatheGeometry(pts, SEGS), mat);
+      } else if (id === 'sarazm') {
+        pts = [
+          new THREE.Vector2(0.00, 0.00),
+          new THREE.Vector2(0.60, 0.00),
+          new THREE.Vector2(0.50, 0.35),
+          new THREE.Vector2(0.75, 0.95),
+          new THREE.Vector2(1.20, 1.80),
+          new THREE.Vector2(1.45, 2.65),
+          new THREE.Vector2(1.38, 2.65),
+          new THREE.Vector2(1.10, 1.80),
+          new THREE.Vector2(0.68, 0.95),
+          new THREE.Vector2(0.40, 0.35),
+          new THREE.Vector2(0.00, 0.15)
+        ];
+        return new THREE.Mesh(new THREE.LatheGeometry(pts, SEGS), mat);
+      } else if (id === 'sapallitepa') {
+        pts = [
+          new THREE.Vector2(0.00, 0.00),
+          new THREE.Vector2(0.65, 0.02),
+          new THREE.Vector2(0.68, 0.12),
+          new THREE.Vector2(0.35, 0.40),
+          new THREE.Vector2(0.28, 0.85),
+          new THREE.Vector2(0.38, 1.15),
+          new THREE.Vector2(1.30, 1.65),
+          new THREE.Vector2(0.90, 2.25),
+          new THREE.Vector2(0.85, 2.65),
+          new THREE.Vector2(1.25, 3.15),
+          new THREE.Vector2(1.15, 3.15),
+          new THREE.Vector2(0.78, 2.65),
+          new THREE.Vector2(0.82, 2.25),
+          new THREE.Vector2(1.20, 1.65),
+          new THREE.Vector2(0.20, 1.18),
+          new THREE.Vector2(0.00, 1.18)
+        ];
+        return new THREE.Mesh(new THREE.LatheGeometry(pts, SEGS), mat);
+      } else if (id === 'andronovo') {
+        pts = [
+          new THREE.Vector2(0.00, 0.00),
+          new THREE.Vector2(0.75, 0.00),
+          new THREE.Vector2(0.90, 0.65),
+          new THREE.Vector2(1.25, 1.35),
+          new THREE.Vector2(1.48, 1.85),
+          new THREE.Vector2(1.20, 2.25),
+          new THREE.Vector2(1.25, 2.80),
+          new THREE.Vector2(1.16, 2.80),
+          new THREE.Vector2(1.10, 2.25),
+          new THREE.Vector2(1.38, 1.85),
+          new THREE.Vector2(1.15, 1.35),
+          new THREE.Vector2(0.68, 0.12),
+          new THREE.Vector2(0.00, 0.12)
+        ];
+        const geo = new THREE.LatheGeometry(pts, SEGS);
+        applyHandmadeOrganicNoise(geo, 0.022, 3.4);
+        return new THREE.Mesh(geo, mat);
+      } else if (id === 'chust') {
+        const grp = new THREE.Group();
+        pts = [
+          new THREE.Vector2(0.00, 0.00),
+          new THREE.Vector2(0.68, 0.00),
+          new THREE.Vector2(1.38, 1.15),
+          new THREE.Vector2(1.28, 2.05),
+          new THREE.Vector2(0.88, 2.45),
+          new THREE.Vector2(0.98, 2.80),
+          new THREE.Vector2(0.88, 2.80),
+          new THREE.Vector2(0.78, 2.45),
+          new THREE.Vector2(1.18, 2.05),
+          new THREE.Vector2(1.28, 1.15),
+          new THREE.Vector2(0.58, 0.12),
+          new THREE.Vector2(0.00, 0.12)
+        ];
+        const geo = new THREE.LatheGeometry(pts, SEGS);
+        applyHandmadeOrganicNoise(geo, 0.016, 2.5);
+        const body = new THREE.Mesh(geo, mat);
+        grp.add(body);
+
+        const hCurve = new THREE.CubicBezierCurve3(
+          new THREE.Vector3(0.88, 2.50, 0),
+          new THREE.Vector3(1.55, 2.30, 0),
+          new THREE.Vector3(1.58, 1.65, 0),
+          new THREE.Vector3(1.25, 1.45, 0)
+        );
+        const hGeom = new THREE.TubeGeometry(hCurve, 28, 0.09, 12, false);
+        const h1 = new THREE.Mesh(hGeom, mat);
+        const h2 = h1.clone();
+        h2.rotation.y = Math.PI;
+        grp.add(h1);
+        grp.add(h2);
+        return grp;
+      } else if (id === 'kaunchi') {
+        const grp = new THREE.Group();
+        pts = [
+          new THREE.Vector2(0.00, 0.00),
+          new THREE.Vector2(0.62, 0.00),
+          new THREE.Vector2(1.32, 1.10),
+          new THREE.Vector2(1.20, 1.85),
+          new THREE.Vector2(0.72, 2.35),
+          new THREE.Vector2(0.82, 2.90),
+          new THREE.Vector2(0.72, 2.90),
+          new THREE.Vector2(0.62, 2.35),
+          new THREE.Vector2(1.10, 1.85),
+          new THREE.Vector2(1.22, 1.10),
+          new THREE.Vector2(0.52, 0.12),
+          new THREE.Vector2(0.00, 0.12)
+        ];
+        const body = new THREE.Mesh(new THREE.LatheGeometry(pts, SEGS), mat);
+        grp.add(body);
+
+        const hCurve = new THREE.CubicBezierCurve3(
+          new THREE.Vector3(0.76, 2.68, 0),
+          new THREE.Vector3(1.50, 2.55, 0),
+          new THREE.Vector3(1.50, 1.60, 0),
+          new THREE.Vector3(1.12, 1.42, 0)
+        );
+        const hMesh = new THREE.Mesh(new THREE.TubeGeometry(hCurve, 32, 0.085, 12, false), mat);
+        grp.add(hMesh);
+
+        // Kizel: Arxar boshi va burama shoxlari
+        const ramGroup = new THREE.Group();
+        ramGroup.position.set(1.42, 2.64, 0);
+
+        const skullGeo = new THREE.SphereGeometry(0.12, 18, 16);
+        skullGeo.scale(1.25, 0.95, 0.85);
+        const skull = new THREE.Mesh(skullGeo, mat);
+        skull.rotation.z = -0.35;
+        ramGroup.add(skull);
+
+        const snoutGeo = new THREE.CylinderGeometry(0.045, 0.085, 0.18, 16);
+        const snout = new THREE.Mesh(snoutGeo, mat);
+        snout.rotation.z = Math.PI / 2 + 0.15;
+        snout.position.set(0.11, -0.03, 0);
+        ramGroup.add(snout);
+
+        const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 10), mat);
+        eyeR.position.set(0.05, 0.03, 0.085);
+        const eyeL = eyeR.clone();
+        eyeL.position.set(0.05, 0.03, -0.085);
+        ramGroup.add(eyeR);
+        ramGroup.add(eyeL);
+
+        const hornPathR = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(0.02, 0.08, 0.06),
+          new THREE.Vector3(-0.06, 0.18, 0.14),
+          new THREE.Vector3(-0.16, 0.12, 0.16),
+          new THREE.Vector3(-0.17, -0.02, 0.13),
+          new THREE.Vector3(-0.07, -0.10, 0.09),
+          new THREE.Vector3(0.03, -0.06, 0.07)
+        ]);
+        const hornGeoR = new THREE.TubeGeometry(hornPathR, 42, 0.038, 12, false);
+        const hornR = new THREE.Mesh(hornGeoR, mat);
+
+        const hornPathL = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(0.02, 0.08, -0.06),
+          new THREE.Vector3(-0.06, 0.18, -0.14),
+          new THREE.Vector3(-0.16, 0.12, -0.16),
+          new THREE.Vector3(-0.17, -0.02, -0.13),
+          new THREE.Vector3(-0.07, -0.10, -0.09),
+          new THREE.Vector3(0.03, -0.06, -0.07)
+        ]);
+        const hornGeoL = new THREE.TubeGeometry(hornPathL, 42, 0.038, 12, false);
+        const hornL = new THREE.Mesh(hornGeoL, mat);
+
+        ramGroup.add(hornR);
+        ramGroup.add(hornL);
+        grp.add(ramGroup);
+
+        return grp;
+      } else if (id === 'kushan') {
+        const grp = new THREE.Group();
+        pts = [
+          new THREE.Vector2(0.00, 0.00),
+          new THREE.Vector2(0.48, 0.03),
+          new THREE.Vector2(0.32, 0.35),
+          new THREE.Vector2(1.08, 1.35),
+          new THREE.Vector2(1.26, 2.00),
+          new THREE.Vector2(0.85, 2.60),
+          new THREE.Vector2(0.78, 2.92),
+          new THREE.Vector2(0.96, 3.18),
+          new THREE.Vector2(0.88, 3.18),
+          new THREE.Vector2(0.70, 2.92),
+          new THREE.Vector2(0.78, 2.60),
+          new THREE.Vector2(1.16, 2.00),
+          new THREE.Vector2(0.98, 1.35),
+          new THREE.Vector2(0.24, 0.35),
+          new THREE.Vector2(0.00, 0.12)
+        ];
+
+        const latheGeo = new THREE.LatheGeometry(pts, SEGS * 2);
+        const posAttr = latheGeo.attributes.position;
+
+        for (let i = 0; i < posAttr.count; i++) {
+          const py = posAttr.getY(i);
+          if (py > 2.82) {
+            const factor = Math.min(1.0, (py - 2.82) / 0.36);
+            let px = posAttr.getX(i);
+            let pz = posAttr.getZ(i);
+            const angle = Math.atan2(pz, px);
+
+            const spoutFactor = Math.max(0, Math.cos(angle - Math.PI));
+            const sideFactor = Math.pow(Math.abs(Math.sin(angle)), 1.3);
+
+            px -= spoutFactor * (0.32 * factor);
+            pz *= 1.0 + (sideFactor * 0.45 - spoutFactor * 0.32) * factor;
+
+            posAttr.setX(i, px);
+            posAttr.setZ(i, pz);
+            posAttr.setY(i, py + (spoutFactor * 0.08 - sideFactor * 0.04) * factor);
+          }
+        }
+        latheGeo.computeVertexNormals();
+        const body = new THREE.Mesh(latheGeo, mat);
+        grp.add(body);
+
+        const hCurve = new THREE.CubicBezierCurve3(
+          new THREE.Vector3(0.84, 3.08, 0),
+          new THREE.Vector3(1.48, 2.85, 0),
+          new THREE.Vector3(1.48, 1.95, 0),
+          new THREE.Vector3(1.18, 1.70, 0)
+        );
+        grp.add(new THREE.Mesh(new THREE.TubeGeometry(hCurve, 28, 0.05, 10, false), mat));
+        return grp;
+      } else if (id === 'afrasiab') {
+        const grp = new THREE.Group();
+        pts = [
+          new THREE.Vector2(0.00, 0.00),
+          new THREE.Vector2(0.70, 0.00),
+          new THREE.Vector2(1.30, 1.20),
+          new THREE.Vector2(1.15, 2.05),
+          new THREE.Vector2(0.58, 2.45),
+          new THREE.Vector2(0.68, 2.55),
+          new THREE.Vector2(0.58, 2.65),
+          new THREE.Vector2(0.68, 3.20),
+          new THREE.Vector2(0.60, 3.20),
+          new THREE.Vector2(0.50, 2.65),
+          new THREE.Vector2(1.05, 2.05),
+          new THREE.Vector2(1.18, 1.20),
+          new THREE.Vector2(0.60, 0.12),
+          new THREE.Vector2(0.00, 0.12)
+        ];
+        const body = new THREE.Mesh(new THREE.LatheGeometry(pts, SEGS), mat);
+        grp.add(body);
+
+        const hCurve = new THREE.CubicBezierCurve3(
+          new THREE.Vector3(0.62, 2.92, 0),
+          new THREE.Vector3(1.30, 2.75, 0),
+          new THREE.Vector3(1.32, 1.85, 0),
+          new THREE.Vector3(1.02, 1.65, 0)
+        );
+        grp.add(new THREE.Mesh(new THREE.TubeGeometry(hCurve, 28, 0.075, 10, false), mat));
+        return grp;
+      }
+
+      return new THREE.Mesh(new THREE.LatheGeometry(pts, SEGS), mat);
+    }
+
+    /* =========================================================================
+       6. THREE.JS SAHNASI, STUDIO YORIG'I VA ORBITCONTROLS SOZLAMALARI
+       ========================================================================= */
+    const container = document.getElementById('canvas-container');
+    const canvas = document.getElementById('webgl-canvas');
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      powerPreference: "high-performance",
+      alpha: false
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.18;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.xr.enabled = true;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#090b10');
+
+    // GLTF / DRACO yuklovchilari
+    const dracoLoader = new THREE.DRACOLoader();
+    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+    const gltfLoader = new THREE.GLTFLoader();
+    gltfLoader.setDRACOLoader(dracoLoader);
+
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 40);
+    camera.position.set(0, 2.0, 4.4);
+
+    // ORBITCONTROLS — QATIY VA NAZORATLI BOSHQARUV (PAN BUTKUL O'CHIRILGAN)
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.target.set(0, 1.5, 0);
+
+    // Qat'iy chegaralar: model hech qachon ekrandan uchib ketmaydi va yo'qolmaydi
+    controls.enablePan = false; // Ikki barmoq bilan siljitish o'chirilgan (faqat ZUUM)
+    controls.minDistance = 2.6; // Model juda yaqinlashib ketmaydi
+    controls.maxDistance = 5.8; // Model juda uzoqlashib ketmaydi
+    controls.maxPolarAngle = Math.PI / 2 + 0.02; // Pol ostiga tushib ketmaslik
+    controls.minPolarAngle = 0.1;
+
+    const ambientLight = new THREE.AmbientLight(0xfcf7ea, 0.95);
+    scene.add(ambientLight);
+
+    const spotLight = new THREE.SpotLight(0xffecd0, 2.6);
+    spotLight.position.set(2.5, 6.5, 3.2);
+    spotLight.angle = Math.PI / 4.8;
+    spotLight.penumbra = 0.7;
+    spotLight.castShadow = true;
+    spotLight.shadow.bias = -0.001;
+    spotLight.shadow.mapSize.width = 1024;
+    spotLight.shadow.mapSize.height = 1024;
+    scene.add(spotLight);
+
+    const fillLight = new THREE.DirectionalLight(0xb4ccee, 0.85);
+    fillLight.position.set(-4.5, 2.5, 2.5);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.DirectionalLight(0xffeed6, 1.25);
+    rimLight.position.set(0, 4.2, -4.5);
+    scene.add(rimLight);
+
+    // Shoxsupa va soha
+    const podiumGroup = new THREE.Group();
+    scene.add(podiumGroup);
+
+    const plinthMat = new THREE.MeshStandardMaterial({
+      color: 0x121520,
+      roughness: 0.45,
+      metalness: 0.1
+    });
+    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.68, 0.9, 48), plinthMat);
+    plinth.position.y = 0.45;
+    plinth.receiveShadow = true;
+    podiumGroup.add(plinth);
+
+    const goldRingMat = new THREE.MeshStandardMaterial({
+      color: 0xe5b853,
+      metalness: 0.85,
+      roughness: 0.22
+    });
+    const goldRing = new THREE.Mesh(new THREE.TorusGeometry(1.56, 0.016, 10, 64), goldRingMat);
+    goldRing.rotation.x = Math.PI / 2;
+    goldRing.position.y = 0.9;
+    podiumGroup.add(goldRing);
+
+    const shadowCanvas = document.createElement('canvas');
+    shadowCanvas.width = shadowCanvas.height = 256;
+    const sCtx = shadowCanvas.getContext('2d');
+    const sGrad = sCtx.createRadialGradient(128, 128, 8, 128, 128, 122);
+    sGrad.addColorStop(0, 'rgba(0,0,0,0.85)');
+    sGrad.addColorStop(0.5, 'rgba(0,0,0,0.35)');
+    sGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    sCtx.fillStyle = sGrad;
+    sCtx.fillRect(0, 0, 256, 256);
+
+    const shadowPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.6, 2.6),
+      new THREE.MeshBasicMaterial({
+        map: new THREE.CanvasTexture(shadowCanvas),
+        transparent: true,
+        opacity: 0.9
+      })
+    );
+    shadowPlane.rotation.x = -Math.PI / 2;
+    shadowPlane.position.y = 0.905;
+    podiumGroup.add(shadowPlane);
+
+    /* =========================================================================
+       7. EKSPONATLARNI SAHNAGA YUKLASH VA INTERAKTI TIZIM
+       ========================================================================= */
+    const vesselRoot = new THREE.Group();
+    vesselRoot.position.y = 0.91;
+    scene.add(vesselRoot);
+
+    const loadedMeshes = [];
+    const preloadBar = document.getElementById('preload-fill');
+    const preloaderEl = document.getElementById('preloader');
+
+    let activeIndex = 0;
+    let autoRotate = true;
+    let isWireframe = false;
+    let showHotspots = true;
+    let targetCamDist = 4.0;
+    let targetTargetY = 1.8;
+
+    function applyWireframeToMesh(obj, wireframeEnabled) {
+      obj.traverse(child => {
+        if (child.isMesh && child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => m.wireframe = wireframeEnabled);
+          } else {
+            child.material.wireframe = wireframeEnabled;
+          }
+        }
+      });
+    }
+
+    async function initArtifactsAsync() {
+      for (let i = 0; i < ARTIFACTS.length; i++) {
+        const art = ARTIFACTS[i];
+        const texPair = generateArtifactMaps(art.id);
+        const mesh = createVesselMesh(art, texPair);
+
+        mesh.visible = (i === 0);
+        mesh.traverse(obj => {
+          if (obj.isMesh) {
+            obj.castShadow = true;
+            obj.receiveShadow = true;
+          }
+        });
+
+        applyWireframeToMesh(mesh, isWireframe);
+
+        vesselRoot.add(mesh);
+        loadedMeshes.push(mesh);
+
+        const pct = Math.round(((i + 1) / ARTIFACTS.length) * 100);
+        if (preloadBar) preloadBar.style.width = `${pct}%`;
+
+        await new Promise(res => setTimeout(res, 10));
+      }
+
+      renderer.compile(scene, camera);
+
+      setTimeout(() => {
+        if (preloaderEl) {
+          preloaderEl.classList.add('fade-out');
+          setTimeout(() => preloaderEl.remove(), 700);
+        }
+      }, 250);
+    }
+
+    function switchArtifact(index) {
+      if (activeIndex === index && loadedMeshes[index]?.visible) return;
+      triggerHaptic('selection');
+
+      activeIndex = index;
+      const data = ARTIFACTS[index];
+
+      loadedMeshes.forEach((m, i) => {
+        m.visible = (i === index);
+        if (i === index) {
+          m.rotation.y = 0;
+          applyWireframeToMesh(m, isWireframe);
+        }
+      });
+
+      targetCamDist = data.camDist;
+      targetTargetY = data.camY;
+
+      updateUIInfo();
+
+      document.querySelectorAll('.culture-tab').forEach((tab, i) => {
+        tab.classList.toggle('active', i === index);
+        if (i === index) tab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      });
+
+      updateHotspotElements();
+    }
+
+    // Joriy til va eksponatga asosan matnlarni yangilash
+    function updateUIInfo() {
+      const data = ARTIFACTS[activeIndex];
+      if (!data) return;
+
+      // Qalquvchi badge
+      document.getElementById('badge-title').innerText = data.title;
+      document.getElementById('badge-sub').innerText = `${data.culture} • ${data.period.split('(')[0]}`;
+
+      // Modal pasport
+      document.getElementById('modal-title').innerText = data.title;
+      document.getElementById('modal-culture').innerText = `${data.culture} • ${data.period}`;
+      document.getElementById('meta-period').innerText = data.period;
+      document.getElementById('meta-region').innerText = data.region;
+      document.getElementById('meta-tech').innerText = data.tech;
+      document.getElementById('meta-desc').innerText = data.desc;
+
+      const fList = document.getElementById('meta-features');
+      fList.innerHTML = '';
+      data.features.forEach(f => {
+        const li = document.createElement('li');
+        li.innerText = f;
+        fList.appendChild(li);
+      });
+    }
+
+    /* =========================================================================
+       8. KAMERANI DASTLABKI HOLATGA SILLIQ QAYTARISH (RESET VIEW)
+       ========================================================================= */
+    function resetCameraView() {
+      triggerHaptic('medium');
+      const data = ARTIFACTS[activeIndex];
+      targetCamDist = data.camDist;
+      targetTargetY = data.camY;
+
+      // Kamerani to'g'ri markaziy nuqtaga va optimal masofaga yo'naltirish
+      controls.target.set(0, targetTargetY, 0);
+      camera.position.set(0, targetTargetY + 0.4, targetCamDist);
+      controls.update();
+
+      if (loadedMeshes[activeIndex]) {
+        loadedMeshes[activeIndex].rotation.y = 0;
+      }
+    }
+
+    document.getElementById('btn-reset').addEventListener('click', resetCameraView);
+
+    // Ekran bo'sh joyiga ikki marta bosganda (Double Tap) qaytarish
+    let lastTap = 0;
+    renderer.domElement.addEventListener('touchend', (e) => {
+      const currentTime = new Date().getTime();
+      const tapLength = currentTime - lastTap;
+      if (tapLength < 300 && tapLength > 0) {
+        resetCameraView();
+      }
+      lastTap = currentTime;
+    });
+
+    /* =========================================================================
+       9. HOTSPOTLAR (DIQQATGA SAZOVOR NUQTALAR)
+       ========================================================================= */
+    const hotspotsContainer = document.getElementById('hotspots-container');
+    let currentHotspotElements = [];
+
+    function updateHotspotElements() {
+      hotspotsContainer.innerHTML = '';
+      currentHotspotElements = [];
+
+      if (!showHotspots) return;
+
+      const data = ARTIFACTS[activeIndex];
+      if (!data?.hotspots) return;
+
+      data.hotspots.forEach(hs => {
+        const el = document.createElement('div');
+        el.className = 'hotspot-node';
+        el.innerHTML = `
+          <div class="hotspot-ring">
+            <div class="hotspot-dot"></div>
+          </div>
+          <div class="hotspot-tooltip">
+            <strong>${hs.title}</strong><br>${hs.desc}
+          </div>
+        `;
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          triggerHaptic('light');
+          el.classList.toggle('active');
+        });
+        hotspotsContainer.appendChild(el);
+        currentHotspotElements.push({ el, pos: new THREE.Vector3(...hs.pos) });
+      });
+    }
+
+    const tempV = new THREE.Vector3();
+    function renderHotspots() {
+      if (!showHotspots || currentHotspotElements.length === 0) return;
+      const activeMesh = loadedMeshes[activeIndex];
+      if (!activeMesh) return;
+
+      currentHotspotElements.forEach(item => {
+        tempV.copy(item.pos);
+        tempV.applyAxisAngle(new THREE.Vector3(0, 1, 0), activeMesh.rotation.y);
+        tempV.add(vesselRoot.position);
+
+        tempV.project(camera);
+
+        const isBehind = tempV.z > 1;
+        const x = (tempV.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-(tempV.y * 0.5) + 0.5) * window.innerHeight;
+
+        item.el.style.left = `${x}px`;
+        item.el.style.top = `${y}px`;
+        item.el.style.display = isBehind ? 'none' : 'block';
+      });
+    }
+
+    /* =========================================================================
+       10. TILNI DINAMIK O'ZGARTIRISH (UZ / RU)
+       ========================================================================= */
+    function switchLanguage(lang) {
+      if (currentLang === lang) return;
+      currentLang = lang;
+      triggerHaptic('selection');
+
+      // Tugmalar faolligi
+      document.getElementById('lang-uz').classList.toggle('active', lang === 'uz');
+      document.getElementById('lang-ru').classList.toggle('active', lang === 'ru');
+
+      const s = UI_STRINGS[lang];
+
+      // UI statik matnlarini yangilash
+      document.getElementById('header-tag').innerText = s.headerTag;
+      document.getElementById('header-title').innerText = s.headerTitle;
+      document.getElementById('hint-tap').innerText = s.hintTap;
+      document.getElementById('badge-btn-text').innerText = s.badgeInfo;
+      document.getElementById('lbl-period').innerText = s.lblPeriod;
+      document.getElementById('lbl-region').innerText = s.lblRegion;
+      document.getElementById('lbl-tech').innerText = s.lblTech;
+      document.getElementById('lbl-features').innerText = s.lblFeatures;
+      document.getElementById('ar-reticle-hint').innerText = s.arHint;
+      document.getElementById('btn-rotate').title = s.btnRotate;
+      document.getElementById('btn-wireframe').title = s.btnWireframe;
+      document.getElementById('btn-hotspots').title = s.btnHotspots;
+      document.getElementById('btn-reset').title = s.btnReset;
+      document.getElementById('btn-ar').title = s.btnAr;
+
+      // Eksponatlar ro'yxatini yangilash
+      ARTIFACTS = resolveArtifacts(lang);
+
+      buildFilterBar();
+      buildCarousel();
+      updateUIInfo();
+      updateHotspotElements();
+    }
+
+    /* =========================================================================
+       11. UI ELEMENTLARI: MODAL, FILTRLAR, KARUSEL
+       ========================================================================= */
+    const modalOverlay = document.getElementById('modal-overlay');
+    const badgeBtnInfo = document.getElementById('badge-btn-info');
+    const modalCloseBtn = document.getElementById('modal-close-btn');
+
+    function openModal() {
+      modalOverlay.classList.add('active');
+      triggerHaptic('light');
+    }
+
+    function closeModal() {
+      modalOverlay.classList.remove('active');
+      triggerHaptic('light');
+    }
+
+    badgeBtnInfo.addEventListener('click', openModal);
+    modalCloseBtn.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) closeModal();
+    });
+
+    // Karusel va filtrlar
+    const carEl = document.getElementById('carousel');
+    const filterBarEl = document.getElementById('filter-bar');
+    let activeCategory = 'all';
+
+    function buildCarousel() {
+      carEl.innerHTML = '';
+      ARTIFACTS.forEach((art, i) => {
+        const tab = document.createElement('div');
+        tab.className = 'culture-tab' + (i === activeIndex ? ' active' : '');
+        tab.dataset.category = art.category;
+        tab.innerHTML = `
+          <span class="tab-idx">№${i + 1}</span>
+          <span class="tab-name">${art.culture.split(' ')[0]}</span>
+        `;
+        tab.addEventListener('click', () => switchArtifact(i));
+        carEl.appendChild(tab);
+      });
+      applyFilter(activeCategory, false);
+    }
+
+    function buildFilterBar() {
+      const s = UI_STRINGS[currentLang];
+      const categories = [
+        { id: 'all', label: s.catAll },
+        { id: 'neolithic', label: s.catNeolithic },
+        { id: 'eneolithic', label: s.catEneolithic },
+        { id: 'bronze', label: s.catBronze },
+        { id: 'iron', label: s.catIron },
+        { id: 'antiquity', label: s.catAntiquity },
+        { id: 'medieval', label: s.catMedieval }
+      ];
+
+      filterBarEl.innerHTML = '';
+      categories.forEach(cat => {
+        const chip = document.createElement('div');
+        chip.className = 'filter-chip' + (cat.id === activeCategory ? ' active' : '');
+        chip.textContent = cat.label;
+        chip.dataset.category = cat.id;
+        chip.addEventListener('click', () => applyFilter(cat.id, true));
+        filterBarEl.appendChild(chip);
+      });
+    }
+
+    function applyFilter(cat, triggerSwitch = true) {
+      activeCategory = cat;
+      if (triggerSwitch) triggerHaptic('light');
+
+      filterBarEl.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.classList.toggle('active', chip.dataset.category === cat);
+      });
+
+      const tabs = Array.from(carEl.querySelectorAll('.culture-tab'));
+      let firstVisible = -1;
+
+      tabs.forEach((tab, i) => {
+        const match = (cat === 'all' || tab.dataset.category === cat);
+        tab.classList.toggle('filtered-out', !match);
+        if (match && firstVisible === -1) firstVisible = i;
+      });
+
+      if (triggerSwitch) {
+        const currentHidden = tabs[activeIndex]?.classList.contains('filtered-out');
+        if (currentHidden && firstVisible !== -1) {
+          switchArtifact(firstVisible);
+        }
+      }
+    }
+
+    // Tugmalar hodisalari
+    const btnRotate = document.getElementById('btn-rotate');
+    btnRotate.addEventListener('click', () => {
+      autoRotate = !autoRotate;
+      btnRotate.classList.toggle('active', autoRotate);
+      triggerHaptic('light');
+    });
+
+    const btnWireframe = document.getElementById('btn-wireframe');
+    btnWireframe.addEventListener('click', () => {
+      isWireframe = !isWireframe;
+      btnWireframe.classList.toggle('active', isWireframe);
+      triggerHaptic('medium');
+
+      loadedMeshes.forEach(mesh => {
+        applyWireframeToMesh(mesh, isWireframe);
+      });
+    });
+
+    const btnHotspots = document.getElementById('btn-hotspots');
+    btnHotspots.addEventListener('click', () => {
+      showHotspots = !showHotspots;
+      btnHotspots.classList.toggle('active', showHotspots);
+      triggerHaptic('light');
+      updateHotspotElements();
+    });
+
+    /* =========================================================================
+       12. WEBXR (AR) — QO'SHIMCHA REALLIK REJIMI
+       ========================================================================= */
+    const btnAr = document.getElementById('btn-ar');
+    const arReticleHint = document.getElementById('ar-reticle-hint');
+    let nativeArButton = null;
+    let hitTestSource = null;
+    let hitTestSourceRequested = false;
+    let arPlacedObject = null;
+
+    const reticle = new THREE.Mesh(
+      new THREE.RingGeometry(0.06, 0.08, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xe5b853 })
+    );
+    reticle.matrixAutoUpdate = false;
+    reticle.visible = false;
+    scene.add(reticle);
+
+    async function initArSupport() {
+      if (!navigator.xr) return;
+      try {
+        const supported = await navigator.xr.isSessionSupported('immersive-ar');
+        if (!supported) return;
+
+        nativeArButton = THREE.ARButton.createButton(renderer, {
+          requiredFeatures: ['hit-test'],
+          optionalFeatures: ['dom-overlay'],
+          domOverlay: { root: document.body }
+        });
+        nativeArButton.id = 'ar-native-btn';
+        document.body.appendChild(nativeArButton);
+        btnAr.style.display = 'flex';
+
+        btnAr.addEventListener('click', () => {
+          triggerHaptic('medium');
+          if (renderer.xr.isPresenting) {
+            renderer.xr.getSession()?.end();
+          } else {
+            nativeArButton.click();
+          }
+        });
+
+        renderer.xr.addEventListener('sessionstart', onArSessionStart);
+        renderer.xr.addEventListener('sessionend', onArSessionEnd);
+
+        const controller = renderer.xr.getController(0);
+        controller.addEventListener('select', onArSelect);
+        scene.add(controller);
+      } catch (err) {
+        console.warn('[AR] WebXR ishga tushmadi:', err.message);
+      }
+    }
+
+    const sceneBackgroundColor = scene.background;
+
+    function onArSessionStart() {
+      document.body.classList.add('ar-mode');
+      arReticleHint.style.display = 'block';
+      btnAr.textContent = '✕';
+      btnAr.classList.add('active');
+      scene.background = null;
+      podiumGroup.visible = false;
+      vesselRoot.visible = false;
+    }
+
+    function onArSessionEnd() {
+      document.body.classList.remove('ar-mode');
+      arReticleHint.style.display = 'none';
+      btnAr.textContent = '◱';
+      btnAr.classList.remove('active');
+      scene.background = sceneBackgroundColor;
+      podiumGroup.visible = true;
+      vesselRoot.visible = true;
+      reticle.visible = false;
+      hitTestSource = null;
+      hitTestSourceRequested = false;
+      if (arPlacedObject) {
+        scene.remove(arPlacedObject);
+        arPlacedObject = null;
+      }
+    }
+
+    function onArSelect() {
+      if (!reticle.visible) return;
+      const active = loadedMeshes[activeIndex];
+      if (!active) return;
+
+      if (arPlacedObject) scene.remove(arPlacedObject);
+
+      const clone = active.clone(true);
+      clone.visible = true;
+      clone.position.setFromMatrixPosition(reticle.matrix);
+      clone.quaternion.setFromRotationMatrix(reticle.matrix);
+      clone.scale.setScalar(0.14);
+      scene.add(clone);
+      arPlacedObject = clone;
+      triggerHaptic('heavy');
+    }
+
+    function updateArHitTest(frame) {
+      if (!frame) return;
+      const referenceSpace = renderer.xr.getReferenceSpace();
+      const session = renderer.xr.getSession();
+
+      if (!hitTestSourceRequested) {
+        hitTestSourceRequested = true;
+        session.requestReferenceSpace('viewer').then((viewerSpace) => {
+          session.requestHitTestSource({ space: viewerSpace }).then((source) => {
+            hitTestSource = source;
+          });
+        });
+        session.addEventListener('end', () => {
+          hitTestSourceRequested = false;
+          hitTestSource = null;
+        });
+      }
+
+      if (hitTestSource) {
+        const hitTestResults = frame.getHitTestResults(hitTestSource);
+        if (hitTestResults.length > 0) {
+          const hit = hitTestResults[0];
+          const pose = hit.getPose(referenceSpace);
+          reticle.visible = true;
+          reticle.matrix.fromArray(pose.transform.matrix);
+        } else {
+          reticle.visible = false;
+        }
+      }
+    }
+
+    /* =========================================================================
+       13. ANIMATSIYA VA RENDER SIKLI
+       ========================================================================= */
+    const clock = new THREE.Clock();
+
+    function animate(timestamp, frame) {
+      const delta = clock.getDelta();
+      const inAr = renderer.xr.isPresenting;
+
+      if (inAr) {
+        updateArHitTest(frame);
+      } else {
+        if (autoRotate && loadedMeshes[activeIndex]) {
+          loadedMeshes[activeIndex].rotation.y += delta * 0.32;
+        }
+
+        controls.target.y += (targetTargetY - controls.target.y) * 0.06;
+        const currentDist = camera.position.distanceTo(controls.target);
+        if (Math.abs(currentDist - targetCamDist) > 0.01) {
+          camera.position.addScaledVector(
+            camera.position.clone().sub(controls.target).normalize(),
+            (targetCamDist - currentDist) * 0.06
+          );
+        }
+        controls.update();
+        renderHotspots();
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    /* =========================================================================
+       14. ILOVANI BOSHLASH (BOOTSTRAP)
+       ========================================================================= */
+    async function bootApp() {
+      // 1. Standart O'zbek tilidagi ma'lumotlar bilan ishga tushirish
+      ARTIFACTS = resolveArtifacts('uz');
+
+      targetCamDist = ARTIFACTS[0].camDist;
+      targetTargetY = ARTIFACTS[0].camY;
+
+      buildFilterBar();
+      buildCarousel();
+      updateUIInfo();
+
+      // 2. 3D modellarni tayyorlash
+      await initArtifactsAsync();
+      initArSupport();
+
+      renderer.setAnimationLoop(animate);
+    }
+
+    bootApp();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
